@@ -1,0 +1,33 @@
+name: vorflux
+description: An Islamic Q&A app powered by AI, sourcing answers from Quran and Hadith.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  provider: ^6.1.2
+  http: ^1.2.2
+  flutter_dotenv: ^5.2.1
+  sqflite: ^2.4.1
+  path_provider: ^2.1.5
+  path: ^1.9.1
+  intl: ^0.20.1
+  google_fonts: ^6.2.1
+  flutter_markdown: ^0.7.6
+  shimmer: ^3.0.0
+  uuid: ^4.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - .env
