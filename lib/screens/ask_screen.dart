@@ -364,7 +364,7 @@ class _AskScreenState extends State<AskScreen> {
         if (_isStreaming)
           const Padding(
             padding: EdgeInsets.only(top: 4),
-            child: _BlinkingCursor(),
+            child: _TypingDots(),
           ),
       ]),
     );
@@ -432,15 +432,15 @@ class _AskScreenState extends State<AskScreen> {
   }
 }
 
-/// A blinking cursor widget that indicates the AI is still generating text.
-class _BlinkingCursor extends StatefulWidget {
-  const _BlinkingCursor();
+/// An animated typing indicator that cycles through ".", "..", "..."
+class _TypingDots extends StatefulWidget {
+  const _TypingDots();
 
   @override
-  State<_BlinkingCursor> createState() => _BlinkingCursorState();
+  State<_TypingDots> createState() => _TypingDotsState();
 }
 
-class _BlinkingCursorState extends State<_BlinkingCursor>
+class _TypingDotsState extends State<_TypingDots>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
 
@@ -449,8 +449,8 @@ class _BlinkingCursorState extends State<_BlinkingCursor>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
-    )..repeat(reverse: true);
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
   }
 
   @override
@@ -464,15 +464,16 @@ class _BlinkingCursorState extends State<_BlinkingCursor>
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
-        return Opacity(
-          opacity: _controller.value,
-          child: Container(
-            width: 8,
-            height: 18,
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: BorderRadius.circular(2),
-            ),
+        // Cycle through 3 states: ".", "..", "..."
+        final dotCount = (_controller.value * 3).floor() % 3 + 1;
+        final dots = '.' * dotCount;
+        return Text(
+          dots,
+          style: TextStyle(
+            color: AppColors.primary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 2,
           ),
         );
       },
