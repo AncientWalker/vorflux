@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:vorflux/models/qa_entry.dart';
+import 'package:vorflux/services/firebase_config.dart';
 import 'package:vorflux/services/firestore_service.dart';
+import 'package:vorflux/services/database_service.dart';
 
 class FeedProvider extends ChangeNotifier {
   List<QAEntry> _entries = [];
@@ -15,6 +17,13 @@ class FeedProvider extends ChangeNotifier {
   bool get isEmpty => _entries.isEmpty;
 
   void listenToFeed() {
+    if (!FirebaseConfig.isAvailable) {
+      // Offline mode: show all local entries as the "feed"
+      _loadFromLocalDb();
+      return;
+    }
+
+    // Firestore mode
     _subscription?.cancel();
     _isLoading = true;
     _hasError = false;
@@ -36,7 +45,28 @@ class FeedProvider extends ChangeNotifier {
     );
   }
 
+  Future<void> _loadFromLocalDb() async {
+    _isLoading = true;
+    _hasError = false;
+    notifyListeners();
+
+    try {
+      _entries = await DatabaseService.getAllEntries();
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading local feed: $e');
+      _hasError = true;
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> refreshFeed() async {
+    if (!FirebaseConfig.isAvailable) {
+      await _loadFromLocalDb();
+      return;
+    }
     listenToFeed();
   }
 

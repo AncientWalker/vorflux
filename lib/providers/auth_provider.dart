@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vorflux/services/auth_service.dart';
+import 'package:vorflux/services/firebase_config.dart';
 
 class AuthProvider extends ChangeNotifier {
   User? _user;
@@ -9,23 +10,52 @@ class AuthProvider extends ChangeNotifier {
 
   User? get user => _user;
   bool get isLoading => _isLoading;
-  bool get isSignedIn => _user != null;
   String? get errorMessage => _errorMessage;
 
-  String get displayName => _user?.displayName ?? 'Anonymous';
-  String get email => _user?.email ?? '';
-  String get photoURL => _user?.photoURL ?? '';
-  String get uid => _user?.uid ?? '';
+  /// Returns true if the user is signed in via Firebase,
+  /// OR if Firebase is unavailable (demo mode — treated as "signed in")
+  bool get isSignedIn {
+    if (!FirebaseConfig.isAvailable) return true;
+    return _user != null;
+  }
+
+  String get displayName {
+    if (!FirebaseConfig.isAvailable) return 'Demo User';
+    return _user?.displayName ?? 'Anonymous';
+  }
+
+  String get email {
+    if (!FirebaseConfig.isAvailable) return 'demo@vorflux.app';
+    return _user?.email ?? '';
+  }
+
+  String get photoURL {
+    if (!FirebaseConfig.isAvailable) return '';
+    return _user?.photoURL ?? '';
+  }
+
+  String get uid {
+    if (!FirebaseConfig.isAvailable) return 'demo-user-001';
+    return _user?.uid ?? '';
+  }
 
   AuthProvider() {
-    AuthService.authStateChanges.listen((User? user) {
-      _user = user;
-      notifyListeners();
-    });
-    _user = AuthService.currentUser;
+    if (FirebaseConfig.isAvailable) {
+      AuthService.authStateChanges.listen((User? user) {
+        _user = user;
+        notifyListeners();
+      });
+      _user = AuthService.currentUser;
+    }
   }
 
   Future<bool> signInWithGoogle() async {
+    if (!FirebaseConfig.isAvailable) {
+      _errorMessage = 'Firebase is not configured. Running in demo mode.';
+      notifyListeners();
+      return false;
+    }
+
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -45,6 +75,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    if (!FirebaseConfig.isAvailable) return;
+
     _isLoading = true;
     notifyListeners();
 

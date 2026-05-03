@@ -8,14 +8,25 @@ import 'package:vorflux/providers/history_provider.dart';
 import 'package:vorflux/providers/feed_provider.dart';
 import 'package:vorflux/screens/home_screen.dart';
 import 'package:vorflux/screens/login_screen.dart';
+import 'package:vorflux/services/firebase_config.dart';
 import 'package:vorflux/theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: ".env");
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+
+  // Try to initialize Firebase, but don't crash if credentials are invalid
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    FirebaseConfig.setAvailable(true);
+    debugPrint('[Vorflux] Firebase initialized successfully');
+  } catch (e) {
+    FirebaseConfig.setAvailable(false);
+    debugPrint('[Vorflux] Firebase unavailable, running in offline/demo mode: $e');
+  }
+
   runApp(const VorfluxApp());
 }
 
@@ -45,6 +56,11 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // If Firebase is not available, skip login and go straight to the app
+    if (!FirebaseConfig.isAvailable) {
+      return const HomeScreen();
+    }
+
     return Consumer<AuthProvider>(
       builder: (context, authProvider, child) {
         if (authProvider.isSignedIn) {

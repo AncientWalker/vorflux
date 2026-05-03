@@ -6,6 +6,7 @@ import 'package:vorflux/providers/feed_provider.dart';
 import 'package:vorflux/screens/ask_screen.dart';
 import 'package:vorflux/screens/history_screen.dart';
 import 'package:vorflux/screens/feed_screen.dart';
+import 'package:vorflux/services/firebase_config.dart';
 import 'package:vorflux/theme/app_theme.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -28,10 +29,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     final authProvider = context.read<AuthProvider>();
-    if (authProvider.isSignedIn) {
-      context.read<HistoryProvider>().listenToUserQuestions(authProvider.uid);
-      context.read<FeedProvider>().listenToFeed();
-    }
+    // Initialize data listeners using uid (demo-user-001 in offline mode)
+    context.read<HistoryProvider>().listenToUserQuestions(authProvider.uid);
+    context.read<FeedProvider>().listenToFeed();
   }
 
   @override
@@ -54,7 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.info_outline),
               onPressed: () => _showAboutDialog(context),
             ),
-          if (authProvider.isSignedIn)
+          if (FirebaseConfig.isAvailable && authProvider.isSignedIn)
             PopupMenuButton<String>(
               offset: const Offset(0, 50),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -99,6 +99,16 @@ class _HomeScreenState extends State<HomeScreen> {
                         )
                       : null,
                 ),
+              ),
+            ),
+          if (!FirebaseConfig.isAvailable)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Chip(
+                label: const Text('Demo', style: TextStyle(color: Colors.white, fontSize: 11)),
+                backgroundColor: AppColors.goldDark,
+                padding: EdgeInsets.zero,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ),
         ],
@@ -181,6 +191,26 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
+            if (!FirebaseConfig.isAvailable) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.goldLight.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.cloud_off, color: AppColors.goldDark, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('Running in demo mode. Data is stored locally.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.goldDark)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
         actions: [

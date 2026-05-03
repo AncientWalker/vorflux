@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
 import 'package:vorflux/models/qa_entry.dart';
+import 'package:vorflux/services/firebase_config.dart';
 import 'package:vorflux/services/firestore_service.dart';
+import 'package:vorflux/services/database_service.dart';
 
 class HistoryProvider extends ChangeNotifier {
   List<QAEntry> _entries = [];
@@ -14,8 +17,16 @@ class HistoryProvider extends ChangeNotifier {
   bool get isEmpty => _entries.isEmpty;
 
   void listenToUserQuestions(String userId) {
-    _subscription?.cancel();
     _currentUserId = userId;
+
+    if (!FirebaseConfig.isAvailable) {
+      // Offline mode: load from SQLite
+      _loadFromLocalDb();
+      return;
+    }
+
+    // Firestore mode
+    _subscription?.cancel();
     _isLoading = true;
     notifyListeners();
 
@@ -33,6 +44,21 @@ class HistoryProvider extends ChangeNotifier {
     );
   }
 
+  Future<void> _loadFromLocalDb() async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      _entries = await DatabaseService.getAllEntries();
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading local history: $e');
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<QAEntry?> addEntry({
     required String question,
     required String answer,
@@ -40,6 +66,29 @@ class HistoryProvider extends ChangeNotifier {
     required String userName,
     required String userPhotoURL,
   }) async {
+    if (!FirebaseConfig.isAvailable) {
+      // Offline mode: save to SQLite
+      final entry = QAEntry(
+        id: const Uuid().v4(),
+        question: question,
+        answer: answer,
+        timestamp: DateTime.now(),
+        askedBy: userName,
+        userPhotoURL: userPhotoURL,
+        userId: userId,
+      );
+      try {
+        await DatabaseService.insertEntry(entry);
+        _entries.insert(0, entry);
+        notifyListeners();
+        return entry;
+      } catch (e) {
+        debugPrint('Error saving to local DB: $e');
+        return null;
+      }
+    }
+
+    // Firestore mode
     try {
       final docId = await FirestoreService.saveQuestion(
         userId: userId,
@@ -64,6 +113,17 @@ class HistoryProvider extends ChangeNotifier {
   }
 
   Future<void> deleteEntry(String id) async {
+    if (!FirebaseConfig.isAvailable) {
+      try {
+        await DatabaseService.deleteEntry(id);
+        _entries.removeWhere((e) => e.id == id);
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Error deleting from local DB: $e');
+      }
+      return;
+    }
+
     try {
       await FirestoreService.deleteQuestion(id);
     } catch (e) {
@@ -72,6 +132,17 @@ class HistoryProvider extends ChangeNotifier {
   }
 
   Future<void> clearHistory() async {
+    if (!FirebaseConfig.isAvailable) {
+      try {
+        await DatabaseService.clearAll();
+        _entries = [];
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Error clearing local DB: $e');
+      }
+      return;
+    }
+
     if (_currentUserId == null) return;
     try {
       await FirestoreService.deleteAllUserQuestions(_currentUserId!);
