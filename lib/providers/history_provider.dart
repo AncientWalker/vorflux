@@ -2,42 +2,34 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import 'package:vorflux/models/qa_entry.dart';
+import 'package:vorflux/providers/searchable_entries_mixin.dart';
 import 'package:vorflux/services/firebase_config.dart';
 import 'package:vorflux/services/firestore_service.dart';
 import 'package:vorflux/services/database_service.dart';
 
-class HistoryProvider extends ChangeNotifier {
+class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
   List<QAEntry> _entries = [];
   bool _isLoading = false;
   StreamSubscription? _subscription;
   String? _currentUserId;
-  String _searchQuery = '';
 
+  @override
   List<QAEntry> get entries => _entries;
   bool get isLoading => _isLoading;
   bool get isEmpty => _entries.isEmpty;
-  String get searchQuery => _searchQuery;
 
+  @override
   @visibleForTesting
   set entriesForTesting(List<QAEntry> entries) {
     _entries = entries;
   }
 
-  /// Returns entries filtered by the current search query.
   /// Matches against question and answer text (case-insensitive).
-  List<QAEntry> get filteredEntries {
-    if (_searchQuery.isEmpty) return _entries;
-    final query = _searchQuery.toLowerCase();
-    return _entries.where((entry) {
-      return entry.question.toLowerCase().contains(query) ||
-          entry.answer.toLowerCase().contains(query);
-    }).toList();
-  }
-
-  void setSearchQuery(String query) {
-    _searchQuery = query;
-    notifyListeners();
-  }
+  @override
+  List<String> searchableFields(QAEntry entry) => [
+        entry.question,
+        entry.answer,
+      ];
 
   void listenToUserQuestions(String userId) {
     _currentUserId = userId;
@@ -179,7 +171,7 @@ class HistoryProvider extends ChangeNotifier {
     _subscription = null;
     _entries = [];
     _currentUserId = null;
-    _searchQuery = '';
+    clearSearch();
     notifyListeners();
   }
 

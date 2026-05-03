@@ -4,6 +4,7 @@ import 'package:vorflux/models/qa_entry.dart';
 import 'package:vorflux/providers/history_provider.dart';
 import 'package:vorflux/screens/detail_screen.dart';
 import 'package:vorflux/theme/app_theme.dart';
+import 'package:vorflux/widgets/search_bar.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -21,10 +22,20 @@ class _HistoryScreenState extends State<HistoryScreen> {
     super.dispose();
   }
 
+  /// Keeps the [TextEditingController] in sync when the provider's
+  /// search query is cleared externally (e.g. via [stopListening]).
+  void _syncController(String providerQuery) {
+    if (_searchController.text != providerQuery) {
+      _searchController.text = providerQuery;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<HistoryProvider>(
       builder: (context, historyProvider, child) {
+        _syncController(historyProvider.searchQuery);
+
         if (historyProvider.isLoading) return const Center(child: CircularProgressIndicator());
         if (historyProvider.isEmpty) return _buildEmptyState(context);
 
@@ -32,9 +43,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
         return Column(children: [
           _buildHeader(context, historyProvider),
-          _buildSearchBar(context, historyProvider),
+          AppSearchBar(
+            controller: _searchController,
+            hintText: 'Search your questions...',
+            searchQuery: historyProvider.searchQuery,
+            onChanged: historyProvider.setSearchQuery,
+            onClear: () => historyProvider.setSearchQuery(''),
+          ),
           if (historyProvider.searchQuery.isNotEmpty && filtered.isEmpty)
-            _buildNoResultsState(context)
+            const NoResultsState()
           else
             Expanded(child: ListView.builder(
               padding: const EdgeInsets.only(bottom: 16),
@@ -61,57 +78,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
             onPressed: () => _showClearDialog(context, provider),
           ),
       ]),
-    );
-  }
-
-  Widget _buildSearchBar(BuildContext context, HistoryProvider provider) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: TextField(
-        controller: _searchController,
-        onChanged: provider.setSearchQuery,
-        decoration: InputDecoration(
-          hintText: 'Search your questions...',
-          prefixIcon: Icon(Icons.search, color: AppColors.textHint, size: 20),
-          suffixIcon: provider.searchQuery.isNotEmpty
-              ? IconButton(
-                  icon: Icon(Icons.clear, color: AppColors.textHint, size: 20),
-                  onPressed: () {
-                    _searchController.clear();
-                    provider.setSearchQuery('');
-                  },
-                )
-              : null,
-          filled: true,
-          fillColor: AppColors.surfaceVariant,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: AppColors.primary, width: 1.5),
-          ),
-        ),
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.textPrimary),
-      ),
-    );
-  }
-
-  Widget _buildNoResultsState(BuildContext context) {
-    return Expanded(
-      child: Center(child: Padding(padding: const EdgeInsets.all(32), child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.search_off, size: 48, color: AppColors.textHint.withValues(alpha: 0.5)),
-        const SizedBox(height: 16),
-        Text('No results found', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.textSecondary)),
-        const SizedBox(height: 4),
-        Text('Try a different keyword', style: Theme.of(context).textTheme.bodyMedium, textAlign: TextAlign.center),
-      ]))),
     );
   }
 

@@ -1,21 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vorflux/providers/feed_provider.dart';
-import 'package:vorflux/models/qa_entry.dart';
 
-QAEntry _makeEntry({
-  String id = '1',
-  String question = 'Test question',
-  String answer = 'Test answer',
-  String? askedBy,
-}) {
-  return QAEntry(
-    id: id,
-    question: question,
-    answer: answer,
-    timestamp: DateTime.now(),
-    askedBy: askedBy,
-  );
-}
+import '../helpers/test_factories.dart';
 
 void main() {
   group('FeedProvider search/filter', () {
@@ -65,10 +51,10 @@ void main() {
     late FeedProvider provider;
 
     final testEntries = [
-      _makeEntry(id: '1', question: 'What does Islam say about fasting?', answer: 'Fasting in Ramadan is one of the five pillars.', askedBy: 'Ahmed'),
-      _makeEntry(id: '2', question: 'How to be patient?', answer: 'Patience (sabr) is a virtue praised in the Quran.', askedBy: 'Fatima'),
-      _makeEntry(id: '3', question: 'What is zakat?', answer: 'Zakat is obligatory charity, one of the five pillars.', askedBy: 'Omar'),
-      _makeEntry(id: '4', question: 'Tell me about prayer', answer: 'Salah is performed five times daily.', askedBy: 'Ahmed Khan'),
+      makeEntry(id: '1', question: 'What does Islam say about fasting?', answer: 'Fasting in Ramadan is one of the five pillars.', askedBy: 'Ahmed'),
+      makeEntry(id: '2', question: 'How to be patient?', answer: 'Patience (sabr) is a virtue praised in the Quran.', askedBy: 'Fatima'),
+      makeEntry(id: '3', question: 'What is zakat?', answer: 'Zakat is obligatory charity, one of the five pillars.', askedBy: 'Omar'),
+      makeEntry(id: '4', question: 'Tell me about prayer', answer: 'Salah is performed five times daily.', askedBy: 'Ahmed Khan'),
     ];
 
     setUp(() {
@@ -122,7 +108,7 @@ void main() {
 
     test('null askedBy does not cause error', () {
       provider.entriesForTesting = [
-        _makeEntry(id: '1', question: 'Test', answer: 'Answer', askedBy: null),
+        makeEntry(id: '1', question: 'Test', answer: 'Answer', askedBy: null),
       ];
       provider.setSearchQuery('anonymous');
       expect(provider.filteredEntries, isEmpty);
@@ -142,9 +128,12 @@ void main() {
       expect(result.length, 2); // entries 1 and 3
     });
 
-    test('single character query works', () {
+    test('single character query matches expected entries', () {
       provider.setSearchQuery('z');
-      expect(provider.filteredEntries.isNotEmpty, true);
+      final result = provider.filteredEntries;
+      // 'z' appears in entry 3 (question: "zakat", answer: "Zakat")
+      expect(result.length, 1);
+      expect(result[0].id, '3');
     });
 
     test('clearing query restores all entries', () {
@@ -158,6 +147,18 @@ void main() {
       provider.setSearchQuery('fasting');
       expect(provider.filteredEntries.length, 1);
       expect(provider.entries.length, 4); // original list unchanged
+    });
+
+    test('leading/trailing whitespace in query is trimmed', () {
+      provider.setSearchQuery('  fasting  ');
+      final result = provider.filteredEntries;
+      expect(result.length, 1);
+      expect(result[0].id, '1');
+    });
+
+    test('whitespace-only query returns all entries', () {
+      provider.setSearchQuery('   ');
+      expect(provider.filteredEntries.length, 4);
     });
   });
 }
