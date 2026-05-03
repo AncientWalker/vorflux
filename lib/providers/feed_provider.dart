@@ -1,48 +1,50 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:vorflux/models/qa_entry.dart';
+import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/services/firebase_config.dart';
 import 'package:vorflux/services/firestore_service.dart';
 import 'package:vorflux/services/database_service.dart';
 
 class FeedProvider extends ChangeNotifier {
-  List<QAEntry> _entries = [];
+  List<ConversationThread> _threads = [];
   bool _isLoading = false;
   bool _hasError = false;
   StreamSubscription? _subscription;
 
-  List<QAEntry> get entries => _entries;
+  List<ConversationThread> get threads => _threads;
   bool get isLoading => _isLoading;
   bool get hasError => _hasError;
-  bool get isEmpty => _entries.isEmpty;
+  bool get isEmpty => _threads.isEmpty;
 
   void listenToFeed() {
     if (!FirebaseConfig.isAvailable) {
-      // Offline mode: show all local entries as the "feed"
-      _loadFromLocalDb();
+      // Defer to avoid notifyListeners() during build phase
+      Future.microtask(() => _loadFromLocalDb());
       return;
     }
 
-    // Firestore mode
-    _subscription?.cancel();
-    _isLoading = true;
-    _hasError = false;
-    notifyListeners();
+    // Defer to avoid notifyListeners() during build phase
+    Future.microtask(() {
+      _subscription?.cancel();
+      _isLoading = true;
+      _hasError = false;
+      notifyListeners();
 
-    _subscription = FirestoreService.getAllQuestions().listen(
-      (entries) {
-        _entries = entries;
-        _isLoading = false;
-        _hasError = false;
-        notifyListeners();
-      },
-      onError: (e) {
-        _hasError = true;
-        _isLoading = false;
-        debugPrint('Error loading feed: $e');
-        notifyListeners();
-      },
-    );
+      _subscription = FirestoreService.getAllThreads().listen(
+        (threads) {
+          _threads = threads;
+          _isLoading = false;
+          _hasError = false;
+          notifyListeners();
+        },
+        onError: (e) {
+          _hasError = true;
+          _isLoading = false;
+          debugPrint('Error loading feed: $e');
+          notifyListeners();
+        },
+      );
+    });
   }
 
   Future<void> _loadFromLocalDb() async {
@@ -51,7 +53,7 @@ class FeedProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _entries = await DatabaseService.getAllEntries();
+      _threads = await DatabaseService.getAllThreads();
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -73,7 +75,7 @@ class FeedProvider extends ChangeNotifier {
   void stopListening() {
     _subscription?.cancel();
     _subscription = null;
-    _entries = [];
+    _threads = [];
     notifyListeners();
   }
 

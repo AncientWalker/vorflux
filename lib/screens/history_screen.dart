@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:vorflux/models/qa_entry.dart';
+import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/providers/history_provider.dart';
-import 'package:vorflux/screens/detail_screen.dart';
 import 'package:vorflux/theme/app_theme.dart';
 
 class HistoryScreen extends StatelessWidget {
-  const HistoryScreen({super.key});
+  final VoidCallback? onOpenThread;
+  const HistoryScreen({super.key, this.onOpenThread});
 
   @override
   Widget build(BuildContext context) {
@@ -18,8 +18,8 @@ class HistoryScreen extends StatelessWidget {
           _buildHeader(context, historyProvider),
           Expanded(child: ListView.builder(
             padding: const EdgeInsets.only(bottom: 16),
-            itemCount: historyProvider.entries.length,
-            itemBuilder: (context, index) => _buildHistoryCard(context, historyProvider.entries[index], historyProvider),
+            itemCount: historyProvider.threads.length,
+            itemBuilder: (context, index) => _buildHistoryCard(context, historyProvider.threads[index], historyProvider),
           )),
         ]);
       },
@@ -31,10 +31,10 @@ class HistoryScreen extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Your Questions', style: Theme.of(context).textTheme.headlineSmall),
-          Text('${provider.entries.length} saved', style: Theme.of(context).textTheme.bodySmall),
+          Text('Your Conversations', style: Theme.of(context).textTheme.headlineSmall),
+          Text('${provider.threads.length} threads', style: Theme.of(context).textTheme.bodySmall),
         ]),
-        if (provider.entries.isNotEmpty)
+        if (provider.threads.isNotEmpty)
           TextButton.icon(
             icon: Icon(Icons.delete_sweep, color: AppColors.error, size: 18),
             label: Text('Clear All', style: TextStyle(color: AppColors.error, fontSize: 13)),
@@ -49,19 +49,19 @@ class HistoryScreen extends StatelessWidget {
       Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.08), shape: BoxShape.circle),
-        child: Icon(Icons.history_rounded, size: 48, color: AppColors.primary.withValues(alpha: 0.4)),
+        child: Icon(Icons.chat_bubble_outline, size: 48, color: AppColors.primary.withValues(alpha: 0.4)),
       ),
       const SizedBox(height: 24),
-      Text('No History Yet', style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: AppColors.textSecondary)),
+      Text('No Conversations Yet', style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: AppColors.textSecondary)),
       const SizedBox(height: 8),
-      Text('Your questions and answers will appear here.\nGo to the Ask tab to get started!',
+      Text('Your conversations will appear here.\nGo to the Ask tab to get started!',
           style: Theme.of(context).textTheme.bodyMedium, textAlign: TextAlign.center),
     ])));
   }
 
-  Widget _buildHistoryCard(BuildContext context, QAEntry entry, HistoryProvider provider) {
+  Widget _buildHistoryCard(BuildContext context, ConversationThread thread, HistoryProvider provider) {
     return Dismissible(
-      key: Key(entry.id),
+      key: Key(thread.id),
       direction: DismissDirection.endToStart,
       background: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -71,37 +71,48 @@ class HistoryScreen extends StatelessWidget {
         child: const Icon(Icons.delete_outline, color: Colors.white),
       ),
       onDismissed: (_) {
-        provider.deleteEntry(entry.id);
+        provider.deleteThread(thread.id);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: const Text('Entry deleted'), behavior: SnackBarBehavior.floating,
+          SnackBar(content: const Text('Conversation deleted'), behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
         );
       },
       child: Card(child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DetailScreen(entry: entry))),
+        onTap: () {
+          context.read<HistoryProvider>().openThread(thread.id);
+          onOpenThread?.call();
+        },
         child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-              child: Icon(Icons.question_answer, color: AppColors.primary, size: 18),
+              child: Icon(Icons.chat_bubble_outline, color: AppColors.primary, size: 18),
             ),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(entry.question, style: Theme.of(context).textTheme.titleMedium, maxLines: 2, overflow: TextOverflow.ellipsis),
+              Text(thread.title, style: Theme.of(context).textTheme.titleMedium, maxLines: 2, overflow: TextOverflow.ellipsis),
               const SizedBox(height: 4),
-              Text(entry.formattedTimestamp, style: Theme.of(context).textTheme.bodySmall),
+              Row(children: [
+                Text('${thread.messageCount} messages', style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(width: 8),
+                Text('·', style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(width: 8),
+                Text(thread.formattedTimestamp, style: Theme.of(context).textTheme.bodySmall),
+              ]),
             ])),
             Icon(Icons.chevron_right, color: AppColors.textHint),
           ]),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: AppColors.surfaceVariant, borderRadius: BorderRadius.circular(10)),
-            child: Text(entry.answerPreview, style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.4),
-                maxLines: 3, overflow: TextOverflow.ellipsis),
-          ),
+          if (thread.lastMessagePreview.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: AppColors.surfaceVariant, borderRadius: BorderRadius.circular(10)),
+              child: Text(thread.lastMessagePreview, style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.4),
+                  maxLines: 3, overflow: TextOverflow.ellipsis),
+            ),
+          ],
         ])),
       )),
     );
@@ -111,7 +122,7 @@ class HistoryScreen extends StatelessWidget {
     showDialog(context: context, builder: (context) => AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: const Text('Clear All History?'),
-      content: const Text('This will permanently delete all your saved questions and answers. This action cannot be undone.'),
+      content: const Text('This will permanently delete all your conversations. This action cannot be undone.'),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
         TextButton(

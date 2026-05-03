@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:vorflux/models/qa_entry.dart';
+import 'package:vorflux/models/conversation_thread.dart';
+import 'package:vorflux/models/chat_message.dart';
 import 'package:vorflux/providers/feed_provider.dart';
 import 'package:vorflux/screens/detail_screen.dart';
+import 'package:vorflux/services/firebase_config.dart';
+import 'package:vorflux/services/firestore_service.dart';
+import 'package:vorflux/services/database_service.dart';
 import 'package:vorflux/theme/app_theme.dart';
 
 class FeedScreen extends StatelessWidget {
@@ -21,8 +25,8 @@ class FeedScreen extends StatelessWidget {
             color: AppColors.primary, onRefresh: feedProvider.refreshFeed,
             child: ListView.builder(
               padding: const EdgeInsets.only(bottom: 16),
-              itemCount: feedProvider.entries.length,
-              itemBuilder: (context, index) => _buildFeedCard(context, feedProvider.entries[index]),
+              itemCount: feedProvider.threads.length,
+              itemBuilder: (context, index) => _buildFeedCard(context, feedProvider.threads[index]),
             ),
           )),
         ]);
@@ -39,7 +43,7 @@ class FeedScreen extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
           decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-          child: Text('${feedProvider.entries.length}',
+          child: Text('${feedProvider.threads.length}',
               style: TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w700)),
         ),
       ]),
@@ -54,9 +58,9 @@ class FeedScreen extends StatelessWidget {
         child: Icon(Icons.people_outline, size: 48, color: AppColors.primary.withValues(alpha: 0.4)),
       ),
       const SizedBox(height: 24),
-      Text('No Questions Yet', style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: AppColors.textSecondary)),
+      Text('No Conversations Yet', style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: AppColors.textSecondary)),
       const SizedBox(height: 8),
-      Text('Be the first to ask a question!\nGo to the Ask tab to get started.',
+      Text('Be the first to start a conversation!\nGo to the Ask tab to get started.',
           style: Theme.of(context).textTheme.bodyMedium, textAlign: TextAlign.center),
     ])));
   }
@@ -71,17 +75,31 @@ class FeedScreen extends StatelessWidget {
     ]));
   }
 
-  Widget _buildFeedCard(BuildContext context, QAEntry entry) {
+  Widget _buildFeedCard(BuildContext context, ConversationThread thread) {
     return Card(child: InkWell(
       borderRadius: BorderRadius.circular(16),
-      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DetailScreen(entry: entry, isFeedItem: true))),
+      onTap: () async {
+        List<ChatMessage> messages;
+        if (FirebaseConfig.isAvailable) {
+          messages = await FirestoreService.getThreadMessages(thread.id);
+        } else {
+          final fullThread = await DatabaseService.getThread(thread.id);
+          messages = fullThread?.messages ?? [];
+        }
+        final fullThread = thread.copyWith(messages: messages);
+        if (context.mounted) {
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => DetailScreen(thread: fullThread, isFeedItem: true),
+          ));
+        }
+      },
       child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          _buildUserAvatar(entry),
+          _buildUserAvatar(thread),
           const SizedBox(width: 10),
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(entry.askedBy ?? 'Anonymous', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 14)),
-            Text(entry.formattedTimestamp, style: Theme.of(context).textTheme.bodySmall),
+            Text(thread.userName ?? 'Anonymous', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 14)),
+            Text(thread.formattedTimestamp, style: Theme.of(context).textTheme.bodySmall),
           ]),
           const Spacer(),
           Icon(Icons.chevron_right, color: AppColors.textHint),
@@ -97,25 +115,30 @@ class FeedScreen extends StatelessWidget {
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Icon(Icons.help_outline, size: 18, color: AppColors.primary.withValues(alpha: 0.5)),
             const SizedBox(width: 8),
-            Expanded(child: Text(entry.question, style: Theme.of(context).textTheme.titleMedium)),
+            Expanded(child: Text(thread.title, style: Theme.of(context).textTheme.titleMedium)),
           ]),
         ),
-        const SizedBox(height: 10),
-        Text(entry.answerPreview, style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.4),
-            maxLines: 3, overflow: TextOverflow.ellipsis),
+        if (thread.lastMessagePreview.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text(thread.lastMessagePreview, style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.4),
+              maxLines: 3, overflow: TextOverflow.ellipsis),
+        ],
         const SizedBox(height: 8),
-        Align(alignment: Alignment.centerRight, child: Text('Read full answer \u2192',
-            style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600))),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Text('${thread.messageCount} messages', style: Theme.of(context).textTheme.bodySmall),
+          Text('Read full conversation \u2192',
+              style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600)),
+        ]),
       ])),
     ));
   }
 
-  Widget _buildUserAvatar(QAEntry entry) {
-    if (entry.userPhotoURL != null && entry.userPhotoURL!.isNotEmpty) {
+  Widget _buildUserAvatar(ConversationThread thread) {
+    if (thread.userPhotoURL != null && thread.userPhotoURL!.isNotEmpty) {
       return CircleAvatar(
         radius: 18,
         backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-        backgroundImage: NetworkImage(entry.userPhotoURL!),
+        backgroundImage: NetworkImage(thread.userPhotoURL!),
         onBackgroundImageError: (_, __) {},
       );
     }
@@ -123,7 +146,7 @@ class FeedScreen extends StatelessWidget {
       radius: 18,
       backgroundColor: AppColors.primary.withValues(alpha: 0.15),
       child: Text(
-        entry.askedBy?.isNotEmpty == true ? entry.askedBy![0].toUpperCase() : '?',
+        thread.userName?.isNotEmpty == true ? thread.userName![0].toUpperCase() : '?',
         style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700, fontSize: 16),
       ),
     );

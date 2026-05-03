@@ -19,18 +19,21 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = const [
-    AskScreen(),
-    HistoryScreen(),
-    FeedScreen(),
+  List<Widget> get _screens => [
+    const AskScreen(),
+    HistoryScreen(onOpenThread: () => setState(() => _currentIndex = 0)),
+    const FeedScreen(),
   ];
 
   @override
   void initState() {
     super.initState();
     final authProvider = context.read<AuthProvider>();
-    // Initialize data listeners using uid (demo-user-001 in offline mode)
-    context.read<HistoryProvider>().listenToUserQuestions(authProvider.uid);
+    context.read<HistoryProvider>().listenToUserThreads(
+      userId: authProvider.uid,
+      userName: authProvider.displayName,
+      userPhotoURL: authProvider.photoURL,
+    );
     context.read<FeedProvider>().listenToFeed();
   }
 
@@ -49,6 +52,14 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
+          if (_currentIndex == 0)
+            IconButton(
+              icon: const Icon(Icons.add_comment_outlined),
+              tooltip: 'New conversation',
+              onPressed: () {
+                context.read<HistoryProvider>().startNewThread();
+              },
+            ),
           if (_currentIndex == 0)
             IconButton(
               icon: const Icon(Icons.info_outline),

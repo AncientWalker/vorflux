@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
+import 'package:vorflux/models/chat_message.dart';
 
 class OpenAIService {
   static const String _baseUrl = 'https://api.openai.com/v1/chat/completions';
@@ -16,6 +17,25 @@ Format your response clearly:
 - Be respectful and scholarly in tone
 ''';
 
+  static const int _maxContextMessages = 20;
+
+  static List<Map<String, String>> buildMessagesPayload(
+    String question, {
+    List<ChatMessage> conversationHistory = const [],
+  }) {
+    final messages = <Map<String, String>>[
+      {'role': 'system', 'content': _systemPrompt},
+    ];
+    final recentHistory = conversationHistory.length > _maxContextMessages
+        ? conversationHistory.sublist(conversationHistory.length - _maxContextMessages)
+        : conversationHistory;
+    for (final msg in recentHistory) {
+      messages.add({'role': msg.role, 'content': msg.content});
+    }
+    messages.add({'role': 'user', 'content': question});
+    return messages;
+  }
+
   static String get _apiKey {
     final key = dotenv.env['OPENAI_API_KEY'] ?? '';
     if (key.isEmpty || key == 'your_api_key_here') {
@@ -27,8 +47,9 @@ Format your response clearly:
     return key;
   }
 
-  static Future<String> askQuestion(String question) async {
+  static Future<String> askQuestion(String question, {List<ChatMessage> conversationHistory = const []}) async {
     try {
+      final messages = buildMessagesPayload(question, conversationHistory: conversationHistory);
       final response = await http.post(
         Uri.parse(_baseUrl),
         headers: {
@@ -37,10 +58,7 @@ Format your response clearly:
         },
         body: jsonEncode({
           'model': 'gpt-4o',
-          'messages': [
-            {'role': 'system', 'content': _systemPrompt},
-            {'role': 'user', 'content': question},
-          ],
+          'messages': messages,
           'max_tokens': 1500,
           'temperature': 0.7,
         }),
