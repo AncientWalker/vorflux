@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
@@ -18,23 +19,43 @@ class _AskScreenState extends State<AskScreen> {
   final TextEditingController _questionController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _isLoading = false;
+  bool _isStreaming = false;
   String? _currentAnswer;
   String? _currentQuestion;
   String? _errorMessage;
+  StreamSubscription<String>? _streamSubscription;
+
+  bool get _isBusy => _isLoading || _isStreaming;
 
   @override
   void dispose() {
+    _streamSubscription?.cancel();
     _questionController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+      );
+    }
   }
 
   Future<void> _askQuestion() async {
     final question = _questionController.text.trim();
     if (question.isEmpty) return;
 
+    // Cancel any in-progress stream
+    await _streamSubscription?.cancel();
+    _streamSubscription = null;
+
     setState(() {
       _isLoading = true;
+      _isStreaming = false;
       _errorMessage = null;
       _currentQuestion = question;
       _currentAnswer = null;
@@ -44,38 +65,73 @@ class _AskScreenState extends State<AskScreen> {
     FocusScope.of(context).unfocus();
 
     try {
-      final answer = await OpenAIService.askQuestion(question);
-      setState(() {
-        _currentAnswer = answer;
-        _isLoading = false;
-      });
+      final stream = OpenAIService.askQuestionStream(question);
+      final answerBuffer = StringBuffer();
 
-      // Save to Firestore with user info
-      if (mounted) {
-        final authProvider = context.read<AuthProvider>();
-        await context.read<HistoryProvider>().addEntry(
-              question: question,
-              answer: answer,
-              userId: authProvider.uid,
-              userName: authProvider.displayName,
-              userPhotoURL: authProvider.photoURL,
-            );
-      }
+      _streamSubscription = stream.listen(
+        (token) {
+          answerBuffer.write(token);
+          if (mounted) {
+            setState(() {
+              // Transition from loading shimmer to streaming text on first token
+              if (_isLoading) {
+                _isLoading = false;
+                _isStreaming = true;
+              }
+              _currentAnswer = answerBuffer.toString();
+            });
+            // Auto-scroll as content grows
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _scrollToBottom();
+            });
+          }
+        },
+        onError: (error) {
+          if (mounted) {
+            setState(() {
+              _errorMessage =
+                  error.toString().replaceAll('Exception: ', '');
+              _isLoading = false;
+              _isStreaming = false;
+            });
+          }
+        },
+        onDone: () async {
+          if (mounted) {
+            final completeAnswer = answerBuffer.toString();
+            setState(() {
+              _isStreaming = false;
+              _currentAnswer = completeAnswer;
+            });
 
-      Future.delayed(const Duration(milliseconds: 300), () {
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 500),
-            curve: Curves.easeOut,
-          );
-        }
-      });
+            // Save to history after streaming completes
+            if (completeAnswer.isNotEmpty) {
+              final authProvider = context.read<AuthProvider>();
+              await context.read<HistoryProvider>().addEntry(
+                    question: question,
+                    answer: completeAnswer,
+                    userId: authProvider.uid,
+                    userName: authProvider.displayName,
+                    userPhotoURL: authProvider.photoURL,
+                  );
+            }
+
+            // Final scroll to bottom
+            Future.delayed(const Duration(milliseconds: 300), () {
+              _scrollToBottom();
+            });
+          }
+        },
+        cancelOnError: true,
+      );
     } catch (e) {
-      setState(() {
-        _errorMessage = e.toString().replaceAll('Exception: ', '');
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString().replaceAll('Exception: ', '');
+          _isLoading = false;
+          _isStreaming = false;
+        });
+      }
     }
   }
 
@@ -92,9 +148,17 @@ class _AskScreenState extends State<AskScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (_currentQuestion == null && !_isLoading) _buildWelcomeBanner(),
-                  if (_currentQuestion != null) ...[_buildQuestionCard(), const SizedBox(height: 16)],
-                  if (_isLoading) ...[const SizedBox(height: 24), const IslamicLoadingIndicator(), const SizedBox(height: 24)],
+                  if (_currentQuestion == null && !_isBusy)
+                    _buildWelcomeBanner(),
+                  if (_currentQuestion != null) ...[
+                    _buildQuestionCard(),
+                    const SizedBox(height: 16),
+                  ],
+                  if (_isLoading) ...[
+                    const SizedBox(height: 24),
+                    const IslamicLoadingIndicator(),
+                    const SizedBox(height: 24),
+                  ],
                   if (_errorMessage != null) _buildErrorCard(),
                   if (_currentAnswer != null) _buildAnswerCard(),
                   const SizedBox(height: 100),
@@ -122,7 +186,10 @@ class _AskScreenState extends State<AskScreen> {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [AppColors.primary.withValues(alpha: 0.08), AppColors.gold.withValues(alpha: 0.06)],
+          colors: [
+            AppColors.primary.withValues(alpha: 0.08),
+            AppColors.gold.withValues(alpha: 0.06),
+          ],
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppColors.primary.withValues(alpha: 0.1)),
@@ -131,23 +198,37 @@ class _AskScreenState extends State<AskScreen> {
         children: [
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
-            child: Icon(Icons.menu_book_rounded, size: 40, color: AppColors.primary),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.menu_book_rounded,
+                size: 40, color: AppColors.primary),
           ),
           const SizedBox(height: 16),
           Text(greeting,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: AppColors.primary),
+              style: Theme.of(context)
+                  .textTheme
+                  .headlineSmall
+                  ?.copyWith(color: AppColors.primary),
               textAlign: TextAlign.center),
           const SizedBox(height: 8),
           Text('Ask from the Quran & Hadith',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.primaryLight),
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(color: AppColors.primaryLight),
               textAlign: TextAlign.center),
           const SizedBox(height: 4),
-          Text('Get answers sourced exclusively from the Holy Quran and authentic Hadith collections with specific citations.',
-              style: Theme.of(context).textTheme.bodyMedium, textAlign: TextAlign.center),
+          Text(
+              'Get answers sourced exclusively from the Holy Quran and authentic Hadith collections with specific citations.',
+              style: Theme.of(context).textTheme.bodyMedium,
+              textAlign: TextAlign.center),
           const SizedBox(height: 20),
           Wrap(
-            spacing: 8, runSpacing: 8, alignment: WrapAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
             children: [
               _buildSuggestionChip('What does Islam say about patience?'),
               _buildSuggestionChip('Importance of prayer in the Quran'),
@@ -165,7 +246,10 @@ class _AskScreenState extends State<AskScreen> {
       backgroundColor: Colors.white,
       side: BorderSide(color: AppColors.primary.withValues(alpha: 0.3)),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      onPressed: () { _questionController.text = text; _askQuestion(); },
+      onPressed: () {
+        _questionController.text = text;
+        _askQuestion();
+      },
     );
   }
 
@@ -180,22 +264,30 @@ class _AskScreenState extends State<AskScreen> {
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Container(
           padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(10)),
+          decoration: BoxDecoration(
+              color: AppColors.primary, borderRadius: BorderRadius.circular(10)),
           child: const Icon(Icons.person, color: Colors.white, size: 18),
         ),
         const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Your Question', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          Text(_currentQuestion!, style: Theme.of(context).textTheme.bodyLarge),
-        ])),
+        Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+              Text('Your Question',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.primary, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              Text(_currentQuestion!,
+                  style: Theme.of(context).textTheme.bodyLarge),
+            ])),
       ]),
     );
   }
 
   Widget _buildErrorCard() {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16), padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.error.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
@@ -204,8 +296,15 @@ class _AskScreenState extends State<AskScreen> {
       child: Row(children: [
         Icon(Icons.error_outline, color: AppColors.error),
         const SizedBox(width: 12),
-        Expanded(child: Text(_errorMessage!, style: TextStyle(color: AppColors.error))),
-        IconButton(icon: Icon(Icons.refresh, color: AppColors.error), onPressed: () { _questionController.text = _currentQuestion ?? ''; _askQuestion(); }),
+        Expanded(
+            child:
+                Text(_errorMessage!, style: TextStyle(color: AppColors.error))),
+        IconButton(
+            icon: Icon(Icons.refresh, color: AppColors.error),
+            onPressed: () {
+              _questionController.text = _currentQuestion ?? '';
+              _askQuestion();
+            }),
       ]),
     );
   }
@@ -214,71 +313,166 @@ class _AskScreenState extends State<AskScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white, borderRadius: BorderRadius.circular(16),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
-        boxShadow: [BoxShadow(color: AppColors.gold.withValues(alpha: 0.08), blurRadius: 10, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+              color: AppColors.gold.withValues(alpha: 0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 4)),
+        ],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: AppColors.gold.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
+            decoration: BoxDecoration(
+                color: AppColors.gold.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10)),
             child: Icon(Icons.auto_awesome, color: AppColors.gold, size: 18),
           ),
           const SizedBox(width: 12),
-          Text('Answer from Quran & Hadith', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.goldDark, fontWeight: FontWeight.w700)),
+          Text('Answer from Quran & Hadith',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppColors.goldDark, fontWeight: FontWeight.w700)),
         ]),
-        const SizedBox(height: 12), const Divider(height: 1), const SizedBox(height: 12),
+        const SizedBox(height: 12),
+        const Divider(height: 1),
+        const SizedBox(height: 12),
         MarkdownBody(
           data: _currentAnswer!,
           styleSheet: MarkdownStyleSheet(
             p: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
-            strong: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700),
+            strong: TextStyle(
+                color: AppColors.primary, fontWeight: FontWeight.w700),
             h1: Theme.of(context).textTheme.headlineMedium,
             h2: Theme.of(context).textTheme.headlineSmall,
             listBullet: Theme.of(context).textTheme.bodyLarge,
             blockquoteDecoration: BoxDecoration(
               color: AppColors.primary.withValues(alpha: 0.05),
-              border: Border(left: BorderSide(color: AppColors.gold, width: 4)),
+              border: Border(
+                  left: BorderSide(color: AppColors.gold, width: 4)),
             ),
             blockquotePadding: const EdgeInsets.all(12),
           ),
         ),
+        if (_isStreaming) _buildStreamingCursor(),
       ]),
+    );
+  }
+
+  Widget _buildStreamingCursor() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: _BlinkingCursor(),
     );
   }
 
   Widget _buildInputArea() {
     return Container(
-      padding: EdgeInsets.only(left: 16, right: 16, bottom: MediaQuery.of(context).padding.bottom + 8, top: 8),
+      padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          bottom: MediaQuery.of(context).padding.bottom + 8,
+          top: 8),
       decoration: BoxDecoration(
         color: Colors.white,
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -4))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, -4)),
+        ],
       ),
       child: Row(children: [
-        Expanded(child: TextField(
-          controller: _questionController, maxLines: 3, minLines: 1,
-          textInputAction: TextInputAction.send, onSubmitted: (_) => _askQuestion(),
+        Expanded(
+            child: TextField(
+          controller: _questionController,
+          maxLines: 3,
+          minLines: 1,
+          textInputAction: TextInputAction.send,
+          onSubmitted: (_) => _askQuestion(),
           decoration: InputDecoration(
             hintText: 'Ask a question about Islam...',
-            prefixIcon: Padding(padding: const EdgeInsets.only(left: 12, right: 8),
-              child: Icon(Icons.mosque_outlined, color: AppColors.primary.withValues(alpha: 0.5))),
+            prefixIcon: Padding(
+                padding: const EdgeInsets.only(left: 12, right: 8),
+                child: Icon(Icons.mosque_outlined,
+                    color: AppColors.primary.withValues(alpha: 0.5))),
           ),
-          enabled: !_isLoading,
+          enabled: !_isBusy,
         )),
         const SizedBox(width: 8),
         Container(
           decoration: BoxDecoration(
-            gradient: LinearGradient(colors: _isLoading ? [Colors.grey, Colors.grey] : [AppColors.primary, AppColors.primaryLight]),
+            gradient: LinearGradient(
+                colors: _isBusy
+                    ? [Colors.grey, Colors.grey]
+                    : [AppColors.primary, AppColors.primaryLight]),
             borderRadius: BorderRadius.circular(16),
           ),
-          child: Material(color: Colors.transparent, child: InkWell(
-            borderRadius: BorderRadius.circular(16), onTap: _isLoading ? null : _askQuestion,
-            child: Container(padding: const EdgeInsets.all(14),
-              child: Icon(_isLoading ? Icons.hourglass_top : Icons.send_rounded, color: Colors.white, size: 24)),
-          )),
+          child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: _isBusy ? null : _askQuestion,
+                child: Container(
+                    padding: const EdgeInsets.all(14),
+                    child: Icon(
+                        _isBusy
+                            ? Icons.hourglass_top
+                            : Icons.send_rounded,
+                        color: Colors.white,
+                        size: 24)),
+              )),
         ),
       ]),
+    );
+  }
+}
+
+/// A blinking cursor widget that indicates the AI is still generating text.
+class _BlinkingCursor extends StatefulWidget {
+  @override
+  State<_BlinkingCursor> createState() => _BlinkingCursorState();
+}
+
+class _BlinkingCursorState extends State<_BlinkingCursor>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Opacity(
+          opacity: _controller.value,
+          child: Container(
+            width: 8,
+            height: 18,
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        );
+      },
     );
   }
 }
