@@ -70,17 +70,30 @@ class HistoryScreen extends StatelessWidget {
         padding: const EdgeInsets.only(right: 24),
         child: const Icon(Icons.delete_outline, color: Colors.white),
       ),
-      onDismissed: (_) {
-        provider.deleteThread(thread.id);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: const Text('Conversation deleted'), behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-        );
+      confirmDismiss: (_) async {
+        try {
+          await provider.deleteThread(thread.id);
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: const Text('Conversation deleted'), behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            );
+          }
+          return true;
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: const Text('Failed to delete conversation'), behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            );
+          }
+          return false;
+        }
       },
       child: Card(child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () {
-          context.read<HistoryProvider>().openThread(thread.id);
+        onTap: () async {
+          await context.read<HistoryProvider>().openThread(thread.id);
           onOpenThread?.call();
         },
         child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

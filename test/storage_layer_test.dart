@@ -3,10 +3,101 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:vorflux/models/chat_message.dart';
 import 'package:vorflux/models/conversation_thread.dart';
+import 'package:vorflux/utils/text_utils.dart';
 
 // We can't directly test DatabaseService static methods because they use
 // a private singleton. Instead, we test the schema, migration logic, and
 // CRUD operations by reproducing the same SQL and logic in-memory.
+
+/// Creates V2 tables and index on the given [DatabaseExecutor].
+/// Mirrors DatabaseService._createTablesAndIndex.
+Future<void> _createTablesAndIndex(DatabaseExecutor db) async {
+  await db.execute('''
+    CREATE TABLE threads (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      userId TEXT,
+      userName TEXT,
+      userPhotoURL TEXT,
+      messageCount INTEGER NOT NULL DEFAULT 0,
+      lastMessagePreview TEXT NOT NULL DEFAULT ''
+    )
+  ''');
+  await db.execute('''
+    CREATE TABLE messages (
+      id TEXT PRIMARY KEY,
+      threadId TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      timestamp TEXT NOT NULL,
+      FOREIGN KEY (threadId) REFERENCES threads(id) ON DELETE CASCADE
+    )
+  ''');
+  await db.execute(
+      'CREATE INDEX idx_messages_threadId ON messages(threadId)');
+}
+
+/// Runs the V1→V2 migration inside a transaction: creates V2 tables,
+/// migrates rows from `history`, then drops `history`.
+/// [msgIdPrefix] is used to generate deterministic message IDs in tests.
+Future<void> _runMigration(Database db, {String msgIdPrefix = 'test-msg'}) async {
+  await db.transaction((txn) async {
+    await _createTablesAndIndex(txn);
+
+    final rows = await txn.query('history');
+    var msgCounter = 0;
+
+    for (final row in rows) {
+      final oldId = (row['id'] as String?) ?? 'fallback-id';
+      final question = (row['question'] as String?) ?? '';
+      final answer = (row['answer'] as String?) ?? '';
+      final askedBy = (row['askedBy'] as String?) ?? '';
+
+      DateTime createdAt;
+      try {
+        createdAt = DateTime.parse(row['timestamp'] as String);
+      } catch (_) {
+        createdAt = DateTime.now();
+      }
+      final updatedAt = createdAt.add(const Duration(seconds: 1));
+
+      final title = truncateTitle(question);
+      final preview = truncatePreview(answer);
+
+      await txn.insert('threads', {
+        'id': oldId,
+        'title': title,
+        'createdAt': createdAt.toIso8601String(),
+        'updatedAt': updatedAt.toIso8601String(),
+        'userId': null,
+        'userName': askedBy,
+        'userPhotoURL': null,
+        'messageCount': 2,
+        'lastMessagePreview': preview,
+      });
+
+      await txn.insert('messages', {
+        'id': '$msgIdPrefix-${msgCounter++}',
+        'threadId': oldId,
+        'role': 'user',
+        'content': question,
+        'timestamp': createdAt.toIso8601String(),
+      });
+
+      await txn.insert('messages', {
+        'id': '$msgIdPrefix-${msgCounter++}',
+        'threadId': oldId,
+        'role': 'assistant',
+        'content': answer,
+        'timestamp': updatedAt.toIso8601String(),
+      });
+    }
+
+    await txn.execute('DROP TABLE history');
+  });
+}
 
 /// Helper to create a fresh in-memory database with v2 schema
 Future<Database> _createV2Database() async {
@@ -19,31 +110,7 @@ Future<Database> _createV2Database() async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
       onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE threads (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            createdAt TEXT NOT NULL,
-            updatedAt TEXT NOT NULL,
-            userId TEXT,
-            userName TEXT,
-            userPhotoURL TEXT,
-            messageCount INTEGER NOT NULL DEFAULT 0,
-            lastMessagePreview TEXT NOT NULL DEFAULT ''
-          )
-        ''');
-        await db.execute('''
-          CREATE TABLE messages (
-            id TEXT PRIMARY KEY,
-            threadId TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            timestamp TEXT NOT NULL,
-            FOREIGN KEY (threadId) REFERENCES threads(id) ON DELETE CASCADE
-          )
-        ''');
-        await db.execute(
-            'CREATE INDEX idx_messages_threadId ON messages(threadId)');
+        await _createTablesAndIndex(db);
       },
     ),
   );
@@ -347,89 +414,7 @@ void main() {
         'askedBy': 'TestUser',
       });
 
-      // Run migration logic inline
-      await db.transaction((txn) async {
-        await txn.execute('''
-          CREATE TABLE threads (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            createdAt TEXT NOT NULL,
-            updatedAt TEXT NOT NULL,
-            userId TEXT,
-            userName TEXT,
-            userPhotoURL TEXT,
-            messageCount INTEGER NOT NULL DEFAULT 0,
-            lastMessagePreview TEXT NOT NULL DEFAULT ''
-          )
-        ''');
-        await txn.execute('''
-          CREATE TABLE messages (
-            id TEXT PRIMARY KEY,
-            threadId TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            timestamp TEXT NOT NULL,
-            FOREIGN KEY (threadId) REFERENCES threads(id) ON DELETE CASCADE
-          )
-        ''');
-        await txn.execute(
-            'CREATE INDEX idx_messages_threadId ON messages(threadId)');
-
-        final rows = await txn.query('history');
-        var msgCounter = 0;
-
-        for (final row in rows) {
-          final oldId = (row['id'] as String?) ?? 'fallback-id';
-          final question = (row['question'] as String?) ?? '';
-          final answer = (row['answer'] as String?) ?? '';
-          final askedBy = (row['askedBy'] as String?) ?? '';
-          final timestampStr = row['timestamp'] as String?;
-
-          DateTime createdAt;
-          try {
-            createdAt = DateTime.parse(timestampStr!);
-          } catch (_) {
-            createdAt = DateTime.now();
-          }
-          final updatedAt = createdAt.add(const Duration(seconds: 1));
-
-          final title =
-              question.length > 100 ? question.substring(0, 100) : question;
-          final preview = answer.length > 120
-              ? '${answer.substring(0, 120)}...'
-              : answer;
-
-          await txn.insert('threads', {
-            'id': oldId,
-            'title': title,
-            'createdAt': createdAt.toIso8601String(),
-            'updatedAt': updatedAt.toIso8601String(),
-            'userId': null,
-            'userName': askedBy,
-            'userPhotoURL': null,
-            'messageCount': 2,
-            'lastMessagePreview': preview,
-          });
-
-          await txn.insert('messages', {
-            'id': 'test-msg-${msgCounter++}',
-            'threadId': oldId,
-            'role': 'user',
-            'content': question,
-            'timestamp': createdAt.toIso8601String(),
-          });
-
-          await txn.insert('messages', {
-            'id': 'test-msg-${msgCounter++}',
-            'threadId': oldId,
-            'role': 'assistant',
-            'content': answer,
-            'timestamp': updatedAt.toIso8601String(),
-          });
-        }
-
-        await txn.execute('DROP TABLE history');
-      });
+      await _runMigration(db);
 
       // Verify migration results
       final threads = await db.query('threads');
@@ -467,85 +452,7 @@ void main() {
         'askedBy': null,
       });
 
-      await db.transaction((txn) async {
-        await txn.execute('''
-          CREATE TABLE threads (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            createdAt TEXT NOT NULL,
-            updatedAt TEXT NOT NULL,
-            userId TEXT,
-            userName TEXT,
-            userPhotoURL TEXT,
-            messageCount INTEGER NOT NULL DEFAULT 0,
-            lastMessagePreview TEXT NOT NULL DEFAULT ''
-          )
-        ''');
-        await txn.execute('''
-          CREATE TABLE messages (
-            id TEXT PRIMARY KEY,
-            threadId TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            timestamp TEXT NOT NULL,
-            FOREIGN KEY (threadId) REFERENCES threads(id) ON DELETE CASCADE
-          )
-        ''');
-        await txn.execute(
-            'CREATE INDEX idx_messages_threadId ON messages(threadId)');
-
-        final rows = await txn.query('history');
-
-        for (final row in rows) {
-          final oldId = row['id'] as String;
-          final question = (row['question'] as String?) ?? '';
-          final answer = (row['answer'] as String?) ?? '';
-          final askedBy = (row['askedBy'] as String?) ?? '';
-
-          DateTime createdAt;
-          try {
-            createdAt = DateTime.parse(row['timestamp'] as String);
-          } catch (_) {
-            createdAt = DateTime.now();
-          }
-          final updatedAt = createdAt.add(const Duration(seconds: 1));
-          final title =
-              question.length > 100 ? question.substring(0, 100) : question;
-          final preview = answer.length > 120
-              ? '${answer.substring(0, 120)}...'
-              : answer;
-
-          await txn.insert('threads', {
-            'id': oldId,
-            'title': title,
-            'createdAt': createdAt.toIso8601String(),
-            'updatedAt': updatedAt.toIso8601String(),
-            'userId': null,
-            'userName': askedBy,
-            'userPhotoURL': null,
-            'messageCount': 2,
-            'lastMessagePreview': preview,
-          });
-
-          await txn.insert('messages', {
-            'id': 'msg-u-$oldId',
-            'threadId': oldId,
-            'role': 'user',
-            'content': question,
-            'timestamp': createdAt.toIso8601String(),
-          });
-
-          await txn.insert('messages', {
-            'id': 'msg-a-$oldId',
-            'threadId': oldId,
-            'role': 'assistant',
-            'content': answer,
-            'timestamp': updatedAt.toIso8601String(),
-          });
-        }
-
-        await txn.execute('DROP TABLE history');
-      });
+      await _runMigration(db);
 
       final threads = await db.query('threads');
       expect(threads.first['title'], 'A' * 100);
@@ -563,85 +470,7 @@ void main() {
         'askedBy': null,
       });
 
-      await db.transaction((txn) async {
-        await txn.execute('''
-          CREATE TABLE threads (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            createdAt TEXT NOT NULL,
-            updatedAt TEXT NOT NULL,
-            userId TEXT,
-            userName TEXT,
-            userPhotoURL TEXT,
-            messageCount INTEGER NOT NULL DEFAULT 0,
-            lastMessagePreview TEXT NOT NULL DEFAULT ''
-          )
-        ''');
-        await txn.execute('''
-          CREATE TABLE messages (
-            id TEXT PRIMARY KEY,
-            threadId TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            timestamp TEXT NOT NULL,
-            FOREIGN KEY (threadId) REFERENCES threads(id) ON DELETE CASCADE
-          )
-        ''');
-        await txn.execute(
-            'CREATE INDEX idx_messages_threadId ON messages(threadId)');
-
-        final rows = await txn.query('history');
-
-        for (final row in rows) {
-          final oldId = row['id'] as String;
-          final question = (row['question'] as String?) ?? '';
-          final answer = (row['answer'] as String?) ?? '';
-          final askedBy = (row['askedBy'] as String?) ?? '';
-
-          DateTime createdAt;
-          try {
-            createdAt = DateTime.parse(row['timestamp'] as String);
-          } catch (_) {
-            createdAt = DateTime.now();
-          }
-          final updatedAt = createdAt.add(const Duration(seconds: 1));
-          final title =
-              question.length > 100 ? question.substring(0, 100) : question;
-          final preview = answer.length > 120
-              ? '${answer.substring(0, 120)}...'
-              : answer;
-
-          await txn.insert('threads', {
-            'id': oldId,
-            'title': title,
-            'createdAt': createdAt.toIso8601String(),
-            'updatedAt': updatedAt.toIso8601String(),
-            'userId': null,
-            'userName': askedBy,
-            'userPhotoURL': null,
-            'messageCount': 2,
-            'lastMessagePreview': preview,
-          });
-
-          await txn.insert('messages', {
-            'id': 'msg-u-$oldId',
-            'threadId': oldId,
-            'role': 'user',
-            'content': question,
-            'timestamp': createdAt.toIso8601String(),
-          });
-
-          await txn.insert('messages', {
-            'id': 'msg-a-$oldId',
-            'threadId': oldId,
-            'role': 'assistant',
-            'content': answer,
-            'timestamp': updatedAt.toIso8601String(),
-          });
-        }
-
-        await txn.execute('DROP TABLE history');
-      });
+      await _runMigration(db);
 
       final threads = await db.query('threads');
       final preview = threads.first['lastMessagePreview'] as String;
@@ -659,84 +488,7 @@ void main() {
         'askedBy': null,
       });
 
-      await db.transaction((txn) async {
-        await txn.execute('''
-          CREATE TABLE threads (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            createdAt TEXT NOT NULL,
-            updatedAt TEXT NOT NULL,
-            userId TEXT,
-            userName TEXT,
-            userPhotoURL TEXT,
-            messageCount INTEGER NOT NULL DEFAULT 0,
-            lastMessagePreview TEXT NOT NULL DEFAULT ''
-          )
-        ''');
-        await txn.execute('''
-          CREATE TABLE messages (
-            id TEXT PRIMARY KEY,
-            threadId TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            timestamp TEXT NOT NULL,
-            FOREIGN KEY (threadId) REFERENCES threads(id) ON DELETE CASCADE
-          )
-        ''');
-        await txn.execute(
-            'CREATE INDEX idx_messages_threadId ON messages(threadId)');
-
-        final rows = await txn.query('history');
-        for (final row in rows) {
-          final oldId = row['id'] as String;
-          final question = (row['question'] as String?) ?? '';
-          final answer = (row['answer'] as String?) ?? '';
-          final askedBy = (row['askedBy'] as String?) ?? '';
-
-          DateTime createdAt;
-          try {
-            createdAt = DateTime.parse(row['timestamp'] as String);
-          } catch (_) {
-            createdAt = DateTime.now();
-          }
-          final updatedAt = createdAt.add(const Duration(seconds: 1));
-          final title =
-              question.length > 100 ? question.substring(0, 100) : question;
-          final preview = answer.length > 120
-              ? '${answer.substring(0, 120)}...'
-              : answer;
-
-          await txn.insert('threads', {
-            'id': oldId,
-            'title': title,
-            'createdAt': createdAt.toIso8601String(),
-            'updatedAt': updatedAt.toIso8601String(),
-            'userId': null,
-            'userName': askedBy,
-            'userPhotoURL': null,
-            'messageCount': 2,
-            'lastMessagePreview': preview,
-          });
-
-          await txn.insert('messages', {
-            'id': 'msg-u-$oldId',
-            'threadId': oldId,
-            'role': 'user',
-            'content': question,
-            'timestamp': createdAt.toIso8601String(),
-          });
-
-          await txn.insert('messages', {
-            'id': 'msg-a-$oldId',
-            'threadId': oldId,
-            'role': 'assistant',
-            'content': answer,
-            'timestamp': updatedAt.toIso8601String(),
-          });
-        }
-
-        await txn.execute('DROP TABLE history');
-      });
+      await _runMigration(db);
 
       // Should succeed without throwing
       final threads = await db.query('threads');
@@ -757,79 +509,7 @@ void main() {
         'askedBy': null,
       });
 
-      await db.transaction((txn) async {
-        await txn.execute('''
-          CREATE TABLE threads (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            createdAt TEXT NOT NULL,
-            updatedAt TEXT NOT NULL,
-            userId TEXT,
-            userName TEXT,
-            userPhotoURL TEXT,
-            messageCount INTEGER NOT NULL DEFAULT 0,
-            lastMessagePreview TEXT NOT NULL DEFAULT ''
-          )
-        ''');
-        await txn.execute('''
-          CREATE TABLE messages (
-            id TEXT PRIMARY KEY,
-            threadId TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            timestamp TEXT NOT NULL,
-            FOREIGN KEY (threadId) REFERENCES threads(id) ON DELETE CASCADE
-          )
-        ''');
-        await txn.execute(
-            'CREATE INDEX idx_messages_threadId ON messages(threadId)');
-
-        final rows = await txn.query('history');
-        for (final row in rows) {
-          final oldId = row['id'] as String;
-          final question = (row['question'] as String?) ?? '';
-          final answer = (row['answer'] as String?) ?? '';
-          final askedBy = (row['askedBy'] as String?) ?? '';
-
-          DateTime createdAt;
-          try {
-            createdAt = DateTime.parse(row['timestamp'] as String);
-          } catch (_) {
-            createdAt = DateTime.now();
-          }
-          final updatedAt = createdAt.add(const Duration(seconds: 1));
-
-          await txn.insert('threads', {
-            'id': oldId,
-            'title': question,
-            'createdAt': createdAt.toIso8601String(),
-            'updatedAt': updatedAt.toIso8601String(),
-            'userId': null,
-            'userName': askedBy,
-            'userPhotoURL': null,
-            'messageCount': 2,
-            'lastMessagePreview': answer,
-          });
-
-          await txn.insert('messages', {
-            'id': 'msg-u-$oldId',
-            'threadId': oldId,
-            'role': 'user',
-            'content': question,
-            'timestamp': createdAt.toIso8601String(),
-          });
-
-          await txn.insert('messages', {
-            'id': 'msg-a-$oldId',
-            'threadId': oldId,
-            'role': 'assistant',
-            'content': answer,
-            'timestamp': updatedAt.toIso8601String(),
-          });
-        }
-
-        await txn.execute('DROP TABLE history');
-      });
+      await _runMigration(db);
 
       final threads = await db.query('threads');
       expect(threads.length, 1);
@@ -849,80 +529,7 @@ void main() {
         });
       }
 
-      await db.transaction((txn) async {
-        await txn.execute('''
-          CREATE TABLE threads (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            createdAt TEXT NOT NULL,
-            updatedAt TEXT NOT NULL,
-            userId TEXT,
-            userName TEXT,
-            userPhotoURL TEXT,
-            messageCount INTEGER NOT NULL DEFAULT 0,
-            lastMessagePreview TEXT NOT NULL DEFAULT ''
-          )
-        ''');
-        await txn.execute('''
-          CREATE TABLE messages (
-            id TEXT PRIMARY KEY,
-            threadId TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            timestamp TEXT NOT NULL,
-            FOREIGN KEY (threadId) REFERENCES threads(id) ON DELETE CASCADE
-          )
-        ''');
-        await txn.execute(
-            'CREATE INDEX idx_messages_threadId ON messages(threadId)');
-
-        final rows = await txn.query('history');
-        var msgCounter = 0;
-        for (final row in rows) {
-          final oldId = row['id'] as String;
-          final question = (row['question'] as String?) ?? '';
-          final answer = (row['answer'] as String?) ?? '';
-          final askedBy = (row['askedBy'] as String?) ?? '';
-
-          DateTime createdAt;
-          try {
-            createdAt = DateTime.parse(row['timestamp'] as String);
-          } catch (_) {
-            createdAt = DateTime.now();
-          }
-          final updatedAt = createdAt.add(const Duration(seconds: 1));
-
-          await txn.insert('threads', {
-            'id': oldId,
-            'title': question,
-            'createdAt': createdAt.toIso8601String(),
-            'updatedAt': updatedAt.toIso8601String(),
-            'userId': null,
-            'userName': askedBy,
-            'userPhotoURL': null,
-            'messageCount': 2,
-            'lastMessagePreview': answer,
-          });
-
-          await txn.insert('messages', {
-            'id': 'msg-${msgCounter++}',
-            'threadId': oldId,
-            'role': 'user',
-            'content': question,
-            'timestamp': createdAt.toIso8601String(),
-          });
-
-          await txn.insert('messages', {
-            'id': 'msg-${msgCounter++}',
-            'threadId': oldId,
-            'role': 'assistant',
-            'content': answer,
-            'timestamp': updatedAt.toIso8601String(),
-          });
-        }
-
-        await txn.execute('DROP TABLE history');
-      });
+      await _runMigration(db);
 
       final threads = await db.query('threads');
       expect(threads.length, 5);
@@ -941,69 +548,7 @@ void main() {
         'askedBy': null,
       });
 
-      await db.transaction((txn) async {
-        await txn.execute('''
-          CREATE TABLE threads (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            createdAt TEXT NOT NULL,
-            updatedAt TEXT NOT NULL,
-            userId TEXT,
-            userName TEXT,
-            userPhotoURL TEXT,
-            messageCount INTEGER NOT NULL DEFAULT 0,
-            lastMessagePreview TEXT NOT NULL DEFAULT ''
-          )
-        ''');
-        await txn.execute('''
-          CREATE TABLE messages (
-            id TEXT PRIMARY KEY,
-            threadId TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            timestamp TEXT NOT NULL,
-            FOREIGN KEY (threadId) REFERENCES threads(id) ON DELETE CASCADE
-          )
-        ''');
-        await txn.execute(
-            'CREATE INDEX idx_messages_threadId ON messages(threadId)');
-
-        final rows = await txn.query('history');
-        for (final row in rows) {
-          final createdAt = DateTime.parse(row['timestamp'] as String);
-          final updatedAt = createdAt.add(const Duration(seconds: 1));
-
-          await txn.insert('threads', {
-            'id': row['id'],
-            'title': row['question'],
-            'createdAt': createdAt.toIso8601String(),
-            'updatedAt': updatedAt.toIso8601String(),
-            'userId': null,
-            'userName': '',
-            'userPhotoURL': null,
-            'messageCount': 2,
-            'lastMessagePreview': row['answer'],
-          });
-
-          await txn.insert('messages', {
-            'id': 'msg-u',
-            'threadId': row['id'],
-            'role': 'user',
-            'content': row['question'],
-            'timestamp': createdAt.toIso8601String(),
-          });
-
-          await txn.insert('messages', {
-            'id': 'msg-a',
-            'threadId': row['id'],
-            'role': 'assistant',
-            'content': row['answer'],
-            'timestamp': updatedAt.toIso8601String(),
-          });
-        }
-
-        await txn.execute('DROP TABLE history');
-      });
+      await _runMigration(db);
 
       final threads = await db.query('threads');
       final createdAt = DateTime.parse(threads.first['createdAt'] as String);
@@ -1076,46 +621,36 @@ void main() {
     });
   });
 
-  group('FirestoreService helper logic (preview truncation)', () {
+  group('truncateTitle and truncatePreview (used by migration and services)', () {
     test('preview for short content stays unchanged', () {
       const content = 'Short answer';
-      final preview = content.length > 120
-          ? '${content.substring(0, 120)}...'
-          : content;
+      final preview = truncatePreview(content);
       expect(preview, 'Short answer');
     });
 
     test('preview for content exactly 120 chars stays unchanged', () {
       final content = 'A' * 120;
-      final preview = content.length > 120
-          ? '${content.substring(0, 120)}...'
-          : content;
+      final preview = truncatePreview(content);
       expect(preview, content);
       expect(preview.length, 120);
     });
 
     test('preview for content over 120 chars is truncated with ellipsis', () {
       final content = 'A' * 200;
-      final preview = content.length > 120
-          ? '${content.substring(0, 120)}...'
-          : content;
+      final preview = truncatePreview(content);
       expect(preview.length, 123);
       expect(preview.endsWith('...'), true);
     });
 
     test('title truncation for question over 100 chars', () {
       final questionText = 'Q' * 150;
-      final title = questionText.length > 100
-          ? questionText.substring(0, 100)
-          : questionText;
+      final title = truncateTitle(questionText);
       expect(title.length, 100);
     });
 
     test('title stays unchanged for question under 100 chars', () {
       const questionText = 'Short question';
-      final title = questionText.length > 100
-          ? questionText.substring(0, 100)
-          : questionText;
+      final title = truncateTitle(questionText);
       expect(title, 'Short question');
     });
   });

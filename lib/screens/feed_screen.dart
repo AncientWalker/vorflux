@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:vorflux/models/conversation_thread.dart';
-import 'package:vorflux/models/chat_message.dart';
 import 'package:vorflux/providers/feed_provider.dart';
 import 'package:vorflux/screens/detail_screen.dart';
-import 'package:vorflux/services/firebase_config.dart';
-import 'package:vorflux/services/firestore_service.dart';
-import 'package:vorflux/services/database_service.dart';
 import 'package:vorflux/theme/app_theme.dart';
+import 'package:vorflux/widgets/user_avatar.dart';
 
 class FeedScreen extends StatelessWidget {
   const FeedScreen({super.key});
@@ -79,14 +76,8 @@ class FeedScreen extends StatelessWidget {
     return Card(child: InkWell(
       borderRadius: BorderRadius.circular(16),
       onTap: () async {
-        List<ChatMessage> messages;
-        if (FirebaseConfig.isAvailable) {
-          messages = await FirestoreService.getThreadMessages(thread.id);
-        } else {
-          final fullThread = await DatabaseService.getThread(thread.id);
-          messages = fullThread?.messages ?? [];
-        }
-        final fullThread = thread.copyWith(messages: messages);
+        final feedProvider = context.read<FeedProvider>();
+        final fullThread = await feedProvider.getFullThread(thread.id);
         if (context.mounted) {
           Navigator.push(context, MaterialPageRoute(
             builder: (_) => DetailScreen(thread: fullThread, isFeedItem: true),
@@ -95,10 +86,11 @@ class FeedScreen extends StatelessWidget {
       },
       child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          _buildUserAvatar(thread),
+          UserAvatar(photoURL: thread.userPhotoURL, userName: thread.userName, radius: 18),
           const SizedBox(width: 10),
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(thread.userName ?? 'Anonymous', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 14)),
+            Text(thread.userName?.isNotEmpty == true ? thread.userName! : 'Anonymous',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 14)),
             Text(thread.formattedTimestamp, style: Theme.of(context).textTheme.bodySmall),
           ]),
           const Spacer(),
@@ -131,24 +123,5 @@ class FeedScreen extends StatelessWidget {
         ]),
       ])),
     ));
-  }
-
-  Widget _buildUserAvatar(ConversationThread thread) {
-    if (thread.userPhotoURL != null && thread.userPhotoURL!.isNotEmpty) {
-      return CircleAvatar(
-        radius: 18,
-        backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-        backgroundImage: NetworkImage(thread.userPhotoURL!),
-        onBackgroundImageError: (_, __) {},
-      );
-    }
-    return CircleAvatar(
-      radius: 18,
-      backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-      child: Text(
-        thread.userName?.isNotEmpty == true ? thread.userName![0].toUpperCase() : '?',
-        style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700, fontSize: 16),
-      ),
-    );
   }
 }

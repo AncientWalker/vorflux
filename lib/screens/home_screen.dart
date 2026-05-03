@@ -18,15 +18,15 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
-
-  List<Widget> get _screens => [
-    const AskScreen(),
-    HistoryScreen(onOpenThread: () => setState(() => _currentIndex = 0)),
-    const FeedScreen(),
-  ];
+  late final List<Widget> _screens;
 
   @override
   void initState() {
+    _screens = [
+      const AskScreen(),
+      HistoryScreen(onOpenThread: () => setState(() => _currentIndex = 0)),
+      const FeedScreen(),
+    ];
     super.initState();
     final authProvider = context.read<AuthProvider>();
     context.read<HistoryProvider>().listenToUserThreads(

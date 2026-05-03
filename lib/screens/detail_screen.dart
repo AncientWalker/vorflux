@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/theme/app_theme.dart';
 import 'package:vorflux/widgets/chat_message_bubble.dart';
+import 'package:vorflux/widgets/user_avatar.dart';
 
 class DetailScreen extends StatelessWidget {
   final ConversationThread thread;
@@ -36,9 +37,9 @@ class DetailScreen extends StatelessWidget {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          if (isFeedItem && thread.userName != null) ...[
+          if (isFeedItem && thread.userName?.isNotEmpty == true) ...[
             Row(children: [
-              _buildUserAvatar(),
+              UserAvatar(photoURL: thread.userPhotoURL, userName: thread.userName, radius: 16),
               const SizedBox(width: 8),
               Text('Asked by ${thread.userName}', style: Theme.of(context).textTheme.bodyMedium),
               const Spacer(),
@@ -74,21 +75,6 @@ class DetailScreen extends StatelessWidget {
           const SizedBox(height: 32),
         ]),
       ),
-    );
-  }
-
-  Widget _buildUserAvatar() {
-    if (thread.userPhotoURL != null && thread.userPhotoURL!.isNotEmpty) {
-      return CircleAvatar(
-        radius: 16, backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-        backgroundImage: NetworkImage(thread.userPhotoURL!),
-        onBackgroundImageError: (_, __) {},
-      );
-    }
-    return CircleAvatar(
-      radius: 16, backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-      child: Text(thread.userName![0].toUpperCase(),
-          style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700)),
     );
   }
 }

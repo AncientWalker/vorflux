@@ -64,6 +64,18 @@ class FeedProvider extends ChangeNotifier {
     }
   }
 
+  /// Fetches a full thread (with messages) suitable for the detail screen.
+  Future<ConversationThread> getFullThread(String threadId) async {
+    final threadMeta = _threads.firstWhere((t) => t.id == threadId);
+    if (FirebaseConfig.isAvailable) {
+      final messages = await FirestoreService.getThreadMessages(threadId);
+      return threadMeta.copyWith(messages: messages);
+    } else {
+      final fullThread = await DatabaseService.getThread(threadId);
+      return fullThread ?? threadMeta;
+    }
+  }
+
   Future<void> refreshFeed() async {
     if (!FirebaseConfig.isAvailable) {
       await _loadFromLocalDb();

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/models/chat_message.dart';
+import 'package:vorflux/utils/text_utils.dart';
 
 class FirestoreService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -39,9 +40,7 @@ class FirestoreService {
       'content': content,
       'timestamp': FieldValue.serverTimestamp(),
     });
-    final preview = content.length > 120
-        ? '${content.substring(0, 120)}...'
-        : content;
+    final preview = truncatePreview(content);
     await threadRef.update({
       'updatedAt': FieldValue.serverTimestamp(),
       'messageCount': FieldValue.increment(1),
@@ -119,12 +118,8 @@ class FirestoreService {
       final createdAt = data['createdAt'] as Timestamp?;
       final userName = data['userName'] as String? ?? '';
       final userPhotoURL = data['userPhotoURL'] as String? ?? '';
-      final title = questionText.length > 100
-          ? questionText.substring(0, 100)
-          : questionText;
-      final preview = answerText.length > 120
-          ? '${answerText.substring(0, 120)}...'
-          : answerText;
+      final title = truncateTitle(questionText);
+      final preview = truncatePreview(answerText);
 
       final threadRef =
           await _firestore.collection(_threadsCollection).add({

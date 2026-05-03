@@ -66,22 +66,26 @@ class _AskScreenState extends State<AskScreen> {
     final historyProvider = context.watch<HistoryProvider>();
     final activeThread = historyProvider.activeThread;
     final isSending = historyProvider.isSending;
+    final isLoading = historyProvider.isLoading;
+    final isInputDisabled = isSending || isLoading;
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Column(
         children: [
           Expanded(
-            child: activeThread == null || activeThread.messages.isEmpty
-                ? SingleChildScrollView(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(16),
-                    child: _buildWelcomeBanner(),
-                  )
-                : _buildMessageList(activeThread, isSending),
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : activeThread == null || activeThread.messages.isEmpty
+                    ? SingleChildScrollView(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(16),
+                        child: _buildWelcomeBanner(),
+                      )
+                    : _buildMessageList(activeThread, isSending),
           ),
           if (_errorMessage != null) _buildErrorBanner(),
-          _buildInputArea(isSending),
+          _buildInputArea(isInputDisabled),
         ],
       ),
     );
@@ -193,7 +197,7 @@ class _AskScreenState extends State<AskScreen> {
     );
   }
 
-  Widget _buildInputArea(bool isSending) {
+  Widget _buildInputArea(bool disabled) {
     return Container(
       padding: EdgeInsets.only(left: 16, right: 16, bottom: MediaQuery.of(context).padding.bottom + 8, top: 8),
       decoration: BoxDecoration(
@@ -209,18 +213,18 @@ class _AskScreenState extends State<AskScreen> {
             prefixIcon: Padding(padding: const EdgeInsets.only(left: 12, right: 8),
               child: Icon(Icons.mosque_outlined, color: AppColors.primary.withValues(alpha: 0.5))),
           ),
-          enabled: !isSending,
+          enabled: !disabled,
         )),
         const SizedBox(width: 8),
         Container(
           decoration: BoxDecoration(
-            gradient: LinearGradient(colors: isSending ? [Colors.grey, Colors.grey] : [AppColors.primary, AppColors.primaryLight]),
+            gradient: LinearGradient(colors: disabled ? [Colors.grey, Colors.grey] : [AppColors.primary, AppColors.primaryLight]),
             borderRadius: BorderRadius.circular(16),
           ),
           child: Material(color: Colors.transparent, child: InkWell(
-            borderRadius: BorderRadius.circular(16), onTap: isSending ? null : _askQuestion,
+            borderRadius: BorderRadius.circular(16), onTap: disabled ? null : _askQuestion,
             child: Container(padding: const EdgeInsets.all(14),
-              child: Icon(isSending ? Icons.hourglass_top : Icons.send_rounded, color: Colors.white, size: 24)),
+              child: Icon(disabled ? Icons.hourglass_top : Icons.send_rounded, color: Colors.white, size: 24)),
           )),
         ),
       ]),

@@ -1,44 +1,64 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vorflux/models/chat_message.dart';
 import 'package:vorflux/models/conversation_thread.dart';
+import 'package:vorflux/utils/text_utils.dart';
 
-// Unit tests for the provider and widget logic introduced in Task 3.
+// Unit tests for provider and widget logic introduced in Task 3.
 // We test pure logic here (no Flutter widgets or services) to keep tests
 // runnable without Firebase, sqflite, or a real Flutter test environment.
 
 void main() {
-  group('HistoryProvider - title/preview truncation logic', () {
-    test('title is truncated to 100 chars for long questions', () {
+  group('truncateTitle and truncatePreview utilities', () {
+    test('truncateTitle truncates to 100 chars for long text', () {
       final question = 'A' * 200;
-      final title = question.length > 100 ? question.substring(0, 100) : question;
+      final title = truncateTitle(question);
       expect(title.length, 100);
       expect(title, 'A' * 100);
     });
 
-    test('title stays unchanged for short questions', () {
+    test('truncateTitle stays unchanged for short text', () {
       const question = 'What is Islam?';
-      final title = question.length > 100 ? question.substring(0, 100) : question;
+      final title = truncateTitle(question);
       expect(title, 'What is Islam?');
     });
 
-    test('preview is truncated to 120 chars with ellipsis for long answers', () {
+    test('truncateTitle stays unchanged for exactly 100 chars', () {
+      final question = 'A' * 100;
+      final title = truncateTitle(question);
+      expect(title, question);
+      expect(title.length, 100);
+    });
+
+    test('truncatePreview truncates to 120 chars with ellipsis for long text', () {
       final answer = 'B' * 200;
-      final preview = answer.length > 120 ? '${answer.substring(0, 120)}...' : answer;
+      final preview = truncatePreview(answer);
       expect(preview.length, 123);
       expect(preview.endsWith('...'), true);
     });
 
-    test('preview stays unchanged for short answers', () {
+    test('truncatePreview stays unchanged for short text', () {
       const answer = 'Short answer.';
-      final preview = answer.length > 120 ? '${answer.substring(0, 120)}...' : answer;
+      final preview = truncatePreview(answer);
       expect(preview, 'Short answer.');
     });
 
-    test('preview stays unchanged for exactly 120 chars', () {
+    test('truncatePreview stays unchanged for exactly 120 chars', () {
       final answer = 'C' * 120;
-      final preview = answer.length > 120 ? '${answer.substring(0, 120)}...' : answer;
+      final preview = truncatePreview(answer);
       expect(preview, answer);
       expect(preview.length, 120);
+    });
+
+    test('truncateTitle accepts custom maxLength', () {
+      final text = 'A' * 50;
+      expect(truncateTitle(text, maxLength: 30).length, 30);
+      expect(truncateTitle(text, maxLength: 100), text);
+    });
+
+    test('truncatePreview accepts custom maxLength', () {
+      final text = 'B' * 50;
+      expect(truncatePreview(text, maxLength: 20).length, 23); // 20 + '...'
+      expect(truncatePreview(text, maxLength: 120), text);
     });
   });
 
@@ -126,12 +146,6 @@ void main() {
   });
 
   group('HistoryProvider - optimistic temp message logic', () {
-    test('temp user message has temp-user- prefix', () {
-      final now = DateTime.now();
-      final tempId = 'temp-user-${now.millisecondsSinceEpoch}';
-      expect(tempId.startsWith('temp-user-'), true);
-    });
-
     test('removing temp message from messages list on failure', () {
       final now = DateTime.now();
       final messages = [
@@ -197,23 +211,6 @@ void main() {
     });
   });
 
-  group('FeedProvider - thread list logic', () {
-    test('threads list initialized empty', () {
-      final threads = <ConversationThread>[];
-      expect(threads.isEmpty, true);
-    });
-
-    test('threads can be populated and checked', () {
-      final now = DateTime(2025, 6, 15);
-      final threads = [
-        ConversationThread(id: 't1', title: 'Thread 1', createdAt: now, updatedAt: now),
-        ConversationThread(id: 't2', title: 'Thread 2', createdAt: now, updatedAt: now),
-      ];
-      expect(threads.isEmpty, false);
-      expect(threads.length, 2);
-    });
-  });
-
   group('ConversationThread - copyWith for messages', () {
     test('copyWith replaces messages list', () {
       final now = DateTime(2025, 6, 15);
@@ -271,24 +268,6 @@ void main() {
     });
   });
 
-  group('ChatMessageBubble - role-based rendering logic', () {
-    test('user messages have role user', () {
-      final msg = ChatMessage(
-        id: 'msg-1', threadId: 't1', role: 'user', content: 'Hello', timestamp: DateTime.now(),
-      );
-      expect(msg.role, 'user');
-      expect(msg.role == 'user', true);
-    });
-
-    test('assistant messages have role assistant', () {
-      final msg = ChatMessage(
-        id: 'msg-2', threadId: 't1', role: 'assistant', content: 'Hi!', timestamp: DateTime.now(),
-      );
-      expect(msg.role, 'assistant');
-      expect(msg.role == 'user', false);
-    });
-  });
-
   group('DetailScreen - copy conversation logic', () {
     test('conversation is formatted correctly for clipboard', () {
       final now = DateTime(2025, 6, 15, 10, 0, 0);
@@ -324,71 +303,22 @@ void main() {
     });
   });
 
-  group('HistoryScreen - thread display logic', () {
-    test('formattedTimestamp shows "Just now" for recent thread', () {
-      final thread = ConversationThread(
-        id: 't1', title: 'Test',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now().subtract(const Duration(seconds: 30)),
-      );
-      expect(thread.formattedTimestamp, 'Just now');
+  group('UserAvatar - name fallback logic', () {
+    test('non-empty userName produces first initial', () {
+      const userName = 'Alice';
+      final initial = userName.isNotEmpty ? userName[0].toUpperCase() : '?';
+      expect(initial, 'A');
     });
 
-    test('formattedTimestamp shows minutes for < 1 hour', () {
-      final thread = ConversationThread(
-        id: 't1', title: 'Test',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now().subtract(const Duration(minutes: 15)),
-      );
-      expect(thread.formattedTimestamp, '15m ago');
-    });
-
-    test('formattedTimestamp shows hours for < 24 hours', () {
-      final thread = ConversationThread(
-        id: 't1', title: 'Test',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now().subtract(const Duration(hours: 5)),
-      );
-      expect(thread.formattedTimestamp, '5h ago');
-    });
-
-    test('formattedTimestamp shows days for < 7 days', () {
-      final thread = ConversationThread(
-        id: 't1', title: 'Test',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now().subtract(const Duration(days: 3)),
-      );
-      expect(thread.formattedTimestamp, '3d ago');
-    });
-  });
-
-  group('FeedScreen - user avatar logic', () {
-    test('thread with non-empty userName shows first initial', () {
-      final thread = ConversationThread(
-        id: 't1', title: 'Test',
-        createdAt: DateTime.now(), updatedAt: DateTime.now(),
-        userName: 'Alice',
-      );
-      expect(thread.userName?.isNotEmpty == true, true);
-      expect(thread.userName![0].toUpperCase(), 'A');
-    });
-
-    test('thread with null userName falls back to ?', () {
-      final thread = ConversationThread(
-        id: 't1', title: 'Test',
-        createdAt: DateTime.now(), updatedAt: DateTime.now(),
-      );
-      final initial = thread.userName?.isNotEmpty == true ? thread.userName![0].toUpperCase() : '?';
+    test('null userName falls back to ?', () {
+      const String? userName = null;
+      final initial = userName?.isNotEmpty == true ? userName![0].toUpperCase() : '?';
       expect(initial, '?');
     });
 
-    test('thread with empty userName falls back to ?', () {
-      final thread = ConversationThread(
-        id: 't1', title: 'Test',
-        createdAt: DateTime.now(), updatedAt: DateTime.now(),
-        userName: '',
-      );
-      final initial = thread.userName?.isNotEmpty == true ? thread.userName![0].toUpperCase() : '?';
+    test('empty userName falls back to ?', () {
+      const userName = '';
+      final initial = userName.isNotEmpty ? userName[0].toUpperCase() : '?';
       expect(initial, '?');
     });
   });

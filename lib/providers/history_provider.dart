@@ -7,6 +7,7 @@ import 'package:vorflux/services/firebase_config.dart';
 import 'package:vorflux/services/firestore_service.dart';
 import 'package:vorflux/services/database_service.dart';
 import 'package:vorflux/services/openai_service.dart';
+import 'package:vorflux/utils/text_utils.dart';
 
 class HistoryProvider extends ChangeNotifier {
   List<ConversationThread> _threads = [];
@@ -88,6 +89,8 @@ class HistoryProvider extends ChangeNotifier {
   }
 
   Future<void> openThread(String threadId) async {
+    // Clear active thread immediately so the UI doesn't show stale content
+    _activeThread = null;
     _isLoading = true;
     notifyListeners();
     try {
@@ -113,56 +116,12 @@ class HistoryProvider extends ChangeNotifier {
 
     try {
       final now = DateTime.now();
-      final isNewThread = _activeThread == null;
-      String threadId;
+      final threadId = await _ensureThread(question, now);
 
-      if (isNewThread) {
-        final title = question.length > 100 ? question.substring(0, 100) : question;
-        if (!FirebaseConfig.isAvailable) {
-          threadId = const Uuid().v4();
-          final newThread = ConversationThread(
-            id: threadId, title: title,
-            createdAt: now, updatedAt: now,
-            userId: _currentUserId, userName: _currentUserName,
-            userPhotoURL: _currentUserPhotoURL,
-            messages: const [], messageCount: 0, lastMessagePreview: '',
-          );
-          await DatabaseService.insertThread(newThread);
-          _activeThread = newThread;
-        } else {
-          threadId = await FirestoreService.createThread(
-            userId: _currentUserId ?? '',
-            userName: _currentUserName,
-            userPhotoURL: _currentUserPhotoURL,
-            title: title,
-          );
-          _activeThread = ConversationThread(
-            id: threadId, title: title,
-            createdAt: now, updatedAt: now,
-            userId: _currentUserId, userName: _currentUserName,
-            userPhotoURL: _currentUserPhotoURL,
-            messages: const [], messageCount: 0, lastMessagePreview: '',
-          );
-        }
-      } else {
-        threadId = _activeThread!.id;
-      }
-
-      // Build conversation history from existing messages (before current question)
       final conversationHistory = List<ChatMessage>.from(_activeThread!.messages);
 
-      // Show user message in UI immediately (optimistic, local only)
-      final tempUserMessage = ChatMessage(
-        id: 'temp-user-${now.millisecondsSinceEpoch}',
-        threadId: threadId, role: 'user',
-        content: question, timestamp: now,
-      );
-      _activeThread = _activeThread!.copyWith(
-        messages: [..._activeThread!.messages, tempUserMessage],
-      );
-      notifyListeners();
+      _showOptimisticUserMessage(threadId, question, now);
 
-      // Call OpenAI with conversation history
       final answer = await OpenAIService.askQuestion(
         question,
         conversationHistory: conversationHistory,
@@ -170,91 +129,192 @@ class HistoryProvider extends ChangeNotifier {
 
       final answerTime = DateTime.now();
 
-      // Persist both messages now that we have a successful response
-      final userMessage = ChatMessage(
-        id: const Uuid().v4(), threadId: threadId,
-        role: 'user', content: question, timestamp: now,
+      final persistedMessages = await _persistMessages(
+        threadId: threadId,
+        question: question,
+        answer: answer,
+        questionTime: now,
+        answerTime: answerTime,
+        conversationHistory: conversationHistory,
       );
-      final assistantMessage = ChatMessage(
-        id: const Uuid().v4(), threadId: threadId,
-        role: 'assistant', content: answer, timestamp: answerTime,
-      );
 
-      final preview = answer.length > 120 ? '${answer.substring(0, 120)}...' : answer;
-      final persistedMessages = List<ChatMessage>.from(conversationHistory)
-        ..add(userMessage)
-        ..add(assistantMessage);
+      final preview = truncatePreview(answer);
 
-      if (!FirebaseConfig.isAvailable) {
-        await DatabaseService.insertMessage(userMessage);
-        await DatabaseService.insertMessage(assistantMessage);
-        await DatabaseService.updateThreadMetadata(
-          threadId: threadId, updatedAt: answerTime,
-          messageCount: persistedMessages.length, lastMessagePreview: preview,
-        );
-      } else {
-        await FirestoreService.addMessage(threadId: threadId, role: 'user', content: question);
-        await FirestoreService.addMessage(threadId: threadId, role: 'assistant', content: answer);
-      }
-
-      _activeThread = _activeThread!.copyWith(
-        messages: persistedMessages,
+      _updateLocalThreadList(
+        threadId: threadId,
+        persistedMessages: persistedMessages,
         updatedAt: answerTime,
-        messageCount: persistedMessages.length,
-        lastMessagePreview: preview,
+        preview: preview,
       );
-
-      // Update thread in _threads list
-      final threadIndex = _threads.indexWhere((t) => t.id == threadId);
-      final updatedThreadMeta = _activeThread!.copyWith(messages: const []);
-      if (threadIndex >= 0) {
-        _threads[threadIndex] = updatedThreadMeta;
-      } else {
-        _threads.insert(0, updatedThreadMeta);
-      }
-      _threads.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
       _isSending = false;
       notifyListeners();
     } catch (e) {
-      // On failure: remove the temp user message
-      if (_activeThread != null && _activeThread!.messages.isNotEmpty) {
-        final messages = List<ChatMessage>.from(_activeThread!.messages);
-        if (messages.last.id.startsWith('temp-user-')) {
-          messages.removeLast();
-          _activeThread = _activeThread!.copyWith(messages: messages);
-        }
-      }
-      // If new thread with no persisted messages, clean up
-      if (_activeThread != null && _activeThread!.messages.isEmpty) {
-        try {
-          if (!FirebaseConfig.isAvailable) {
-            await DatabaseService.deleteThread(_activeThread!.id);
-          } else {
-            await FirestoreService.deleteThread(_activeThread!.id);
-          }
-        } catch (_) {}
-        _activeThread = null;
-      }
+      _rollbackOnFailure();
       _isSending = false;
       notifyListeners();
       rethrow;
     }
   }
 
-  Future<void> deleteThread(String id) async {
+  /// Creates a new thread if none is active, or returns the existing thread ID.
+  Future<String> _ensureThread(String question, DateTime now) async {
+    if (_activeThread != null) return _activeThread!.id;
+
+    final title = truncateTitle(question);
+
     if (!FirebaseConfig.isAvailable) {
-      await DatabaseService.deleteThread(id);
-      _threads.removeWhere((t) => t.id == id);
-      if (_activeThread?.id == id) _activeThread = null;
-      notifyListeners();
-      return;
+      final threadId = const Uuid().v4();
+      final newThread = ConversationThread(
+        id: threadId, title: title,
+        createdAt: now, updatedAt: now,
+        userId: _currentUserId, userName: _currentUserName,
+        userPhotoURL: _currentUserPhotoURL,
+        messages: const [], messageCount: 0, lastMessagePreview: '',
+      );
+      await DatabaseService.insertThread(newThread);
+      _activeThread = newThread;
+      return threadId;
+    } else {
+      final threadId = await FirestoreService.createThread(
+        userId: _currentUserId ?? '',
+        userName: _currentUserName,
+        userPhotoURL: _currentUserPhotoURL,
+        title: title,
+      );
+      _activeThread = ConversationThread(
+        id: threadId, title: title,
+        createdAt: now, updatedAt: now,
+        userId: _currentUserId, userName: _currentUserName,
+        userPhotoURL: _currentUserPhotoURL,
+        messages: const [], messageCount: 0, lastMessagePreview: '',
+      );
+      return threadId;
     }
+  }
+
+  /// Adds a temporary user message to the active thread for immediate UI feedback.
+  void _showOptimisticUserMessage(String threadId, String question, DateTime now) {
+    final tempUserMessage = ChatMessage(
+      id: 'temp-user-${now.millisecondsSinceEpoch}',
+      threadId: threadId, role: 'user',
+      content: question, timestamp: now,
+    );
+    _activeThread = _activeThread!.copyWith(
+      messages: [..._activeThread!.messages, tempUserMessage],
+    );
+    notifyListeners();
+  }
+
+  /// Persists both user and assistant messages and returns the full persisted list.
+  Future<List<ChatMessage>> _persistMessages({
+    required String threadId,
+    required String question,
+    required String answer,
+    required DateTime questionTime,
+    required DateTime answerTime,
+    required List<ChatMessage> conversationHistory,
+  }) async {
+    final userMessage = ChatMessage(
+      id: const Uuid().v4(), threadId: threadId,
+      role: 'user', content: question, timestamp: questionTime,
+    );
+    final assistantMessage = ChatMessage(
+      id: const Uuid().v4(), threadId: threadId,
+      role: 'assistant', content: answer, timestamp: answerTime,
+    );
+
+    final preview = truncatePreview(answer);
+    final persistedMessages = List<ChatMessage>.from(conversationHistory)
+      ..add(userMessage)
+      ..add(assistantMessage);
+
+    if (!FirebaseConfig.isAvailable) {
+      await DatabaseService.insertMessage(userMessage);
+      await DatabaseService.insertMessage(assistantMessage);
+      await DatabaseService.updateThreadMetadata(
+        threadId: threadId, updatedAt: answerTime,
+        messageCount: persistedMessages.length, lastMessagePreview: preview,
+      );
+    } else {
+      await FirestoreService.addMessage(threadId: threadId, role: 'user', content: question);
+      await FirestoreService.addMessage(threadId: threadId, role: 'assistant', content: answer);
+    }
+
+    return persistedMessages;
+  }
+
+  /// Updates the active thread and the _threads list with new data after a successful send.
+  void _updateLocalThreadList({
+    required String threadId,
+    required List<ChatMessage> persistedMessages,
+    required DateTime updatedAt,
+    required String preview,
+  }) {
+    _activeThread = _activeThread!.copyWith(
+      messages: persistedMessages,
+      updatedAt: updatedAt,
+      messageCount: persistedMessages.length,
+      lastMessagePreview: preview,
+    );
+
+    final threadIndex = _threads.indexWhere((t) => t.id == threadId);
+    final updatedThreadMeta = _activeThread!.copyWith(messages: const []);
+    if (threadIndex >= 0) {
+      _threads[threadIndex] = updatedThreadMeta;
+    } else {
+      _threads.insert(0, updatedThreadMeta);
+    }
+    _threads.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  }
+
+  /// Removes the optimistic temp message on failure and cleans up empty threads.
+  Future<void> _rollbackOnFailure() async {
+    if (_activeThread != null && _activeThread!.messages.isNotEmpty) {
+      final messages = List<ChatMessage>.from(_activeThread!.messages);
+      if (messages.last.id.startsWith('temp-user-')) {
+        messages.removeLast();
+        _activeThread = _activeThread!.copyWith(messages: messages);
+      }
+    }
+    // If new thread with no persisted messages, clean up
+    if (_activeThread != null && _activeThread!.messages.isEmpty) {
+      try {
+        if (!FirebaseConfig.isAvailable) {
+          await DatabaseService.deleteThread(_activeThread!.id);
+        } else {
+          await FirestoreService.deleteThread(_activeThread!.id);
+        }
+      } catch (_) {}
+      _activeThread = null;
+    }
+  }
+
+  Future<void> deleteThread(String id) async {
+    // Optimistically remove from local state first
+    final removedThread = _threads.cast<ConversationThread?>().firstWhere(
+      (t) => t!.id == id,
+      orElse: () => null,
+    );
+    _threads.removeWhere((t) => t.id == id);
+    if (_activeThread?.id == id) _activeThread = null;
+    notifyListeners();
+
     try {
-      await FirestoreService.deleteThread(id);
-      if (_activeThread?.id == id) _activeThread = null;
+      if (!FirebaseConfig.isAvailable) {
+        await DatabaseService.deleteThread(id);
+      } else {
+        await FirestoreService.deleteThread(id);
+      }
     } catch (e) {
       debugPrint('Error deleting thread: $e');
+      // Roll back: restore the thread if deletion failed
+      if (removedThread != null) {
+        _threads.add(removedThread);
+        _threads.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+        notifyListeners();
+      }
+      rethrow;
     }
   }
 

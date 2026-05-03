@@ -3,6 +3,7 @@ import 'package:path/path.dart';
 import 'package:uuid/uuid.dart';
 import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/models/chat_message.dart';
+import 'package:vorflux/utils/text_utils.dart';
 
 class DatabaseService {
   static Database? _database;
@@ -33,7 +34,12 @@ class DatabaseService {
     );
   }
 
-  static Future<void> _createV2Schema(Database db) async {
+  static Future<void> _createV2Schema(DatabaseExecutor db) async {
+    await _createTablesAndIndex(db);
+  }
+
+  /// Creates the V2 tables and index. Shared between fresh creation and migration.
+  static Future<void> _createTablesAndIndex(DatabaseExecutor db) async {
     await db.execute('''
       CREATE TABLE threads (
         id TEXT PRIMARY KEY,
@@ -67,33 +73,7 @@ class DatabaseService {
     const uuid = Uuid();
 
     await db.transaction((txn) async {
-      await txn.execute('''
-        CREATE TABLE threads (
-          id TEXT PRIMARY KEY,
-          title TEXT NOT NULL,
-          createdAt TEXT NOT NULL,
-          updatedAt TEXT NOT NULL,
-          userId TEXT,
-          userName TEXT,
-          userPhotoURL TEXT,
-          messageCount INTEGER NOT NULL DEFAULT 0,
-          lastMessagePreview TEXT NOT NULL DEFAULT ''
-        )
-      ''');
-
-      await txn.execute('''
-        CREATE TABLE messages (
-          id TEXT PRIMARY KEY,
-          threadId TEXT NOT NULL,
-          role TEXT NOT NULL,
-          content TEXT NOT NULL,
-          timestamp TEXT NOT NULL,
-          FOREIGN KEY (threadId) REFERENCES threads(id) ON DELETE CASCADE
-        )
-      ''');
-
-      await txn.execute(
-          'CREATE INDEX idx_messages_threadId ON messages(threadId)');
+      await _createTablesAndIndex(txn);
 
       final rows = await txn.query('history');
 
@@ -113,11 +93,8 @@ class DatabaseService {
 
         final updatedAt = createdAt.add(const Duration(seconds: 1));
 
-        final title =
-            question.length > 100 ? question.substring(0, 100) : question;
-        final preview = answer.length > 120
-            ? '${answer.substring(0, 120)}...'
-            : answer;
+        final title = truncateTitle(question);
+        final preview = truncatePreview(answer);
 
         await txn.insert('threads', {
           'id': oldId,
