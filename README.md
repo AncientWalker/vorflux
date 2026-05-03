@@ -1,104 +1,115 @@
-# Vorflux ✨
+# Vorflux
 
 An Islamic Q&A mobile app powered by AI that provides answers exclusively from the **Holy Quran** and **authentic Hadith** collections, with specific citations.
 
 ## Features
 
-### 📖 Ask Tab
+### Google Sign-In
+- Sign in with your Google account to access the app
+- User profile stored in Firebase Firestore
+- Secure authentication via Firebase Auth
+
+### Ask Tab
 - Type any question about Islam
 - Get AI-powered answers sourced exclusively from Quran and Hadith
-- Every answer includes specific citations (Surah:Ayah for Quran, collection name and number for Hadith)
-- Beautiful Markdown-formatted responses
-- Suggested questions to get started
+- Every answer includes specific citations
+- Questions and answers automatically saved to Firestore
 
-### 📚 History Tab
-- All your questions and answers saved locally on device
+### History Tab
+- All your questions and answers synced via Firebase Firestore
+- Real-time updates across devices
 - Swipe to delete individual entries
-- Tap to view full question and answer
-- Clear all history option
 
-### 👥 Feed Tab
-- Community feed showing questions from other users
-- Sample/mock data demonstrating the feed concept
-- Pull-to-refresh functionality
-- Ready for backend integration
+### Feed Tab
+- Community feed showing real questions from all users
+- User names and profile photos displayed
+- Real-time updates as new questions are asked
 
 ## Tech Stack
 
 - **Framework:** Flutter 3.x with Dart
 - **State Management:** Provider
+- **Authentication:** Firebase Auth + Google Sign-In
+- **Database:** Cloud Firestore
 - **AI Backend:** OpenAI Chat Completions API (GPT-4o)
-- **Local Storage:** SQLite (sqflite)
-- **UI:** Material Design 3 with custom Islamic theme (greens, golds, elegant typography)
-- **Fonts:** Google Fonts (Playfair Display + Nunito Sans)
+- **UI:** Material Design 3 with custom Islamic theme
 
 ## Setup
 
-### Prerequisites
-- Flutter SDK 3.8+
-- Android SDK / Xcode (for running on device/emulator)
-- An OpenAI API key
+See [FIREBASE_SETUP.md](FIREBASE_SETUP.md) for complete Firebase configuration instructions.
 
-### Installation
+### Quick Start
 
-1. Clone the repository:
+1. Clone and install dependencies:
    ```bash
    git clone https://github.com/AncientWalker/vorflux.git
    cd vorflux
-   ```
-
-2. Copy the environment file and add your API key:
-   ```bash
-   cp .env.example .env
-   # Edit .env and replace 'your_api_key_here' with your actual OpenAI API key
-   ```
-
-3. Install dependencies:
-   ```bash
    flutter pub get
    ```
+
+2. Configure environment:
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your OpenAI API key
+   ```
+
+3. Set up Firebase (see FIREBASE_SETUP.md)
 
 4. Run the app:
    ```bash
    flutter run
    ```
 
-## Configuration
-
-The app uses a `.env` file for configuration:
-
-| Variable | Description |
-|----------|-------------|
-| `OPENAI_API_KEY` | Your OpenAI API key (required for the Ask tab) |
-
 ## Project Structure
 
 ```
 lib/
-├── main.dart                  # App entry point
+├── main.dart                     # App entry point with Firebase init + auth gate
+├── firebase_options.dart         # Firebase configuration
 ├── models/
-│   └── qa_entry.dart          # Q&A data model
+│   └── qa_entry.dart             # Q&A data model (with user fields)
 ├── providers/
-│   ├── history_provider.dart  # History state management
-│   └── feed_provider.dart     # Feed state management
+│   ├── auth_provider.dart        # Authentication state management
+│   ├── history_provider.dart     # History state (Firestore streams)
+│   └── feed_provider.dart        # Feed state (Firestore streams)
 ├── screens/
-│   ├── home_screen.dart       # Main tab navigation
-│   ├── ask_screen.dart        # Ask tab UI
-│   ├── history_screen.dart    # History tab UI
-│   ├── feed_screen.dart       # Feed tab UI
-│   └── detail_screen.dart     # Full Q&A detail view
+│   ├── login_screen.dart         # Google Sign-In screen
+│   ├── home_screen.dart          # Main tab navigation + sign-out
+│   ├── ask_screen.dart           # Ask tab UI
+│   ├── history_screen.dart       # History tab UI
+│   ├── feed_screen.dart          # Feed tab UI
+│   └── detail_screen.dart        # Full Q&A detail view
 ├── services/
-│   ├── openai_service.dart    # OpenAI API integration
-│   └── database_service.dart  # SQLite database operations
+│   ├── auth_service.dart         # Google Sign-In + Firebase Auth
+│   ├── firestore_service.dart    # Firestore CRUD operations
+│   ├── openai_service.dart       # OpenAI API integration
+│   └── database_service.dart     # Legacy SQLite (kept for reference)
 ├── theme/
-│   └── app_theme.dart         # App theme and colors
+│   └── app_theme.dart            # App theme and colors
 └── widgets/
-    └── loading_indicator.dart # Islamic-themed loading animation
+    └── loading_indicator.dart    # Islamic-themed loading animation
 ```
 
-## Important Note
+## Firestore Collections
 
-⚠️ **Always verify citations with scholarly sources.** AI responses may contain inaccuracies. This app is a tool for learning and exploration, not a replacement for qualified Islamic scholarship.
+### `users` collection
+| Field | Type | Description |
+|-------|------|-------------|
+| displayName | string | Google display name |
+| email | string | Google email |
+| photoURL | string | Google profile photo URL |
+| createdAt | timestamp | First sign-in |
+| lastLoginAt | timestamp | Most recent sign-in |
+
+### `questions` collection
+| Field | Type | Description |
+|-------|------|-------------|
+| userId | string | Firebase Auth UID |
+| userName | string | Display name of asker |
+| userPhotoURL | string | Profile photo URL of asker |
+| questionText | string | The question asked |
+| answerText | string | The AI-generated answer |
+| createdAt | timestamp | When asked |
 
 ## License
 

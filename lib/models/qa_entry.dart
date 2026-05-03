@@ -4,6 +4,8 @@ class QAEntry {
   final String answer;
   final DateTime timestamp;
   final String? askedBy;
+  final String? userPhotoURL;
+  final String? userId;
 
   QAEntry({
     required this.id,
@@ -11,6 +13,8 @@ class QAEntry {
     required this.answer,
     required this.timestamp,
     this.askedBy,
+    this.userPhotoURL,
+    this.userId,
   });
 
   Map<String, dynamic> toMap() {
@@ -20,6 +24,8 @@ class QAEntry {
       'answer': answer,
       'timestamp': timestamp.toIso8601String(),
       'askedBy': askedBy,
+      'userPhotoURL': userPhotoURL,
+      'userId': userId,
     };
   }
 
@@ -30,6 +36,8 @@ class QAEntry {
       answer: map['answer'] as String,
       timestamp: DateTime.parse(map['timestamp'] as String),
       askedBy: map['askedBy'] as String?,
+      userPhotoURL: map['userPhotoURL'] as String?,
+      userId: map['userId'] as String?,
     );
   }
 
