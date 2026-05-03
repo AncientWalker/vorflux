@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/models/chat_message.dart';
+import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/utils/text_utils.dart';
 
 class FirestoreService {
@@ -33,8 +33,7 @@ class FirestoreService {
     required String role,
     required String content,
   }) async {
-    final threadRef =
-        _firestore.collection(_threadsCollection).doc(threadId);
+    final threadRef = _firestore.collection(_threadsCollection).doc(threadId);
     await threadRef.collection(_messagesSubcollection).add({
       'role': role,
       'content': content,
@@ -67,24 +66,27 @@ class FirestoreService {
             snapshot.docs.map((doc) => _docToThread(doc)).toList());
   }
 
-  static Future<List<ChatMessage>> getThreadMessages(
-      String threadId) async {
+  static Future<ConversationThread?> getThread(String threadId) async {
+    final doc = await _firestore.collection(_threadsCollection).doc(threadId).get();
+    if (!doc.exists || doc.data() == null) return null;
+    final thread = _docToThread(doc);
+    final messages = await getThreadMessages(threadId);
+    return thread.copyWith(messages: messages);
+  }
+
+  static Future<List<ChatMessage>> getThreadMessages(String threadId) async {
     final snapshot = await _firestore
         .collection(_threadsCollection)
         .doc(threadId)
         .collection(_messagesSubcollection)
         .orderBy('timestamp')
         .get();
-    return snapshot.docs
-        .map((doc) => _docToMessage(doc, threadId))
-        .toList();
+    return snapshot.docs.map((doc) => _docToMessage(doc, threadId)).toList();
   }
 
   static Future<void> deleteThread(String threadId) async {
-    final threadRef =
-        _firestore.collection(_threadsCollection).doc(threadId);
-    final messagesSnapshot =
-        await threadRef.collection(_messagesSubcollection).get();
+    final threadRef = _firestore.collection(_threadsCollection).doc(threadId);
+    final messagesSnapshot = await threadRef.collection(_messagesSubcollection).get();
     final batch = _firestore.batch();
     for (final doc in messagesSnapshot.docs) {
       batch.delete(doc.reference);
@@ -121,8 +123,7 @@ class FirestoreService {
       final title = truncateTitle(questionText);
       final preview = truncatePreview(answerText);
 
-      final threadRef =
-          await _firestore.collection(_threadsCollection).add({
+      final threadRef = await _firestore.collection(_threadsCollection).add({
         'title': title,
         'createdAt': createdAt ?? FieldValue.serverTimestamp(),
         'updatedAt': createdAt ?? FieldValue.serverTimestamp(),
@@ -140,8 +141,7 @@ class FirestoreService {
       });
 
       final assistantTimestamp = createdAt != null
-          ? Timestamp.fromDate(
-              createdAt.toDate().add(const Duration(seconds: 1)))
+          ? Timestamp.fromDate(createdAt.toDate().add(const Duration(seconds: 1)))
           : FieldValue.serverTimestamp();
       await threadRef.collection(_messagesSubcollection).add({
         'role': 'assistant',
@@ -153,7 +153,45 @@ class FirestoreService {
     }
   }
 
-  static ConversationThread _docToThread(QueryDocumentSnapshot doc) {
+  static Future<void> addBookmark({
+    required String userId,
+    required ConversationThread thread,
+  }) async {
+    await _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('bookmarks')
+        .doc(thread.id)
+        .set({
+      ...thread.copyWith(messages: const []).toMap(),
+      'bookmarkedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> removeBookmark({
+    required String userId,
+    required String threadId,
+  }) async {
+    await _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('bookmarks')
+        .doc(threadId)
+        .delete();
+  }
+
+  static Stream<List<ConversationThread>> getUserBookmarks(String userId) {
+    return _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('bookmarks')
+        .orderBy('bookmarkedAt', descending: true)
+        .snapshots()
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => _docToThread(doc)).toList());
+  }
+
+  static ConversationThread _docToThread(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() as Map<String, dynamic>;
     final createdAt = data['createdAt'] as Timestamp?;
     final updatedAt = data['updatedAt'] as Timestamp?;
@@ -166,14 +204,15 @@ class FirestoreService {
       userName: data['userName'] as String?,
       userPhotoURL: data['userPhotoURL'] as String?,
       messageCount: (data['messageCount'] as int?) ?? 0,
-      lastMessagePreview:
-          (data['lastMessagePreview'] as String?) ?? '',
+      lastMessagePreview: (data['lastMessagePreview'] as String?) ?? '',
     );
   }
 
   static ChatMessage _docToMessage(
-      QueryDocumentSnapshot doc, String threadId) {
-    final data = doc.data() as Map<String, dynamic>;
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    String threadId,
+  ) {
+    final data = doc.data();
     final timestamp = data['timestamp'] as Timestamp?;
     return ChatMessage(
       id: doc.id,

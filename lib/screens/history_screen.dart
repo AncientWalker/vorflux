@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/providers/history_provider.dart';
 import 'package:vorflux/theme/app_theme.dart';
+import 'package:vorflux/widgets/bookmark_toggle_button.dart';
 import 'package:vorflux/widgets/search_bar.dart';
 
 class HistoryScreen extends StatefulWidget {
@@ -253,7 +254,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         ],
                       ),
                     ),
-                    Icon(Icons.chevron_right, color: AppColors.textHint),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        BookmarkToggleButton(
+                          thread: thread,
+                          iconSize: 22,
+                          showSnackBar: false,
+                        ),
+                        const SizedBox(width: 8),
+                        Icon(Icons.chevron_right, color: AppColors.textHint),
+                      ],
+                    ),
                   ],
                 ),
                 if (thread.lastMessagePreview.isNotEmpty) ...[

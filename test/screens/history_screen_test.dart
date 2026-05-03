@@ -1,15 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:vorflux/providers/auth_provider.dart';
+import 'package:vorflux/providers/bookmark_provider.dart';
 import 'package:vorflux/providers/history_provider.dart';
 import 'package:vorflux/screens/history_screen.dart';
+import 'package:vorflux/services/firebase_config.dart';
 
 import '../helpers/test_factories.dart';
 
-Widget _buildTestApp(HistoryProvider provider) {
+Widget _buildTestApp(HistoryProvider historyProvider) {
+  FirebaseConfig.setAvailable(false);
   return MaterialApp(
-    home: ChangeNotifierProvider<HistoryProvider>.value(
-      value: provider,
+    home: MultiProvider(
+      providers: [
+        ChangeNotifierProvider<HistoryProvider>.value(value: historyProvider),
+        ChangeNotifierProvider<BookmarkProvider>(create: (_) => BookmarkProvider()),
+        ChangeNotifierProvider<AuthProvider>(create: (_) => AuthProvider()),
+      ],
       child: const Scaffold(body: HistoryScreen()),
     ),
   );
@@ -20,9 +28,22 @@ void main() {
     late HistoryProvider provider;
 
     final testEntries = [
-      makeThread(id: '1', title: 'What does Islam say about fasting?', lastMessagePreview: 'Fasting in Ramadan is one of the five pillars of Islam.'),
-      makeThread(id: '2', title: 'How to be patient?', lastMessagePreview: 'Patience (sabr) is a virtue highly praised in the Quran.'),
-      makeThread(id: '3', title: 'What is zakat?', lastMessagePreview: 'Zakat is the obligatory charity in Islam.'),
+      makeThread(
+        id: '1',
+        title: 'What does Islam say about fasting?',
+        lastMessagePreview: 'Fasting in Ramadan is one of the five pillars of Islam.',
+      ),
+      makeThread(
+        id: '2',
+        title: 'How to be patient?',
+        lastMessagePreview:
+            'Patience (sabr) is a virtue highly praised in the Quran.',
+      ),
+      makeThread(
+        id: '3',
+        title: 'What is zakat?',
+        lastMessagePreview: 'Zakat is the obligatory charity in Islam.',
+      ),
     ];
 
     setUp(() {

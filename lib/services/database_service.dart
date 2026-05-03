@@ -7,6 +7,22 @@ import 'package:vorflux/utils/text_utils.dart';
 
 class DatabaseService {
   static Database? _database;
+  static const String _bookmarksTable = 'bookmarks';
+
+  static const String _createBookmarksTableSql = '''
+    CREATE TABLE $_bookmarksTable (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      userId TEXT,
+      userName TEXT,
+      userPhotoURL TEXT,
+      messageCount INTEGER NOT NULL DEFAULT 0,
+      lastMessagePreview TEXT NOT NULL DEFAULT '',
+      bookmarkedAt TEXT NOT NULL
+    )
+  ''';
 
   static Future<Database> get database async {
     if (_database != null) return _database!;
@@ -20,23 +36,27 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
       onCreate: (db, version) async {
-        await _createV2Schema(db);
+        await _createV3Schema(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await _migrateV1ToV2(db);
         }
+        if (oldVersion < 3) {
+          await db.execute(_createBookmarksTableSql);
+        }
       },
     );
   }
 
-  static Future<void> _createV2Schema(DatabaseExecutor db) async {
+  static Future<void> _createV3Schema(DatabaseExecutor db) async {
     await _createTablesAndIndex(db);
+    await db.execute(_createBookmarksTableSql);
   }
 
   static Future<void> _createTablesAndIndex(DatabaseExecutor db) async {
@@ -209,5 +229,28 @@ class DatabaseService {
       orderBy: 'timestamp ASC',
     );
     return maps.map(ChatMessage.fromMap).toList();
+  }
+
+  static Future<void> insertBookmark(ConversationThread thread) async {
+    final db = await database;
+    await db.insert(
+      _bookmarksTable,
+      {
+        ...thread.copyWith(messages: const []).toMap(),
+        'bookmarkedAt': DateTime.now().toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  static Future<void> removeBookmark(String threadId) async {
+    final db = await database;
+    await db.delete(_bookmarksTable, where: 'id = ?', whereArgs: [threadId]);
+  }
+
+  static Future<List<ConversationThread>> getAllBookmarks() async {
+    final db = await database;
+    final maps = await db.query(_bookmarksTable, orderBy: 'bookmarkedAt DESC');
+    return maps.map((map) => ConversationThread.fromMap(map)).toList();
   }
 }
