@@ -49,9 +49,15 @@ class _AskScreenState extends State<AskScreen> {
     final question = _questionController.text.trim();
     if (question.isEmpty) return;
 
+    // Dismiss keyboard and clear input before any async gap
+    _questionController.clear();
+    FocusScope.of(context).unfocus();
+
     // Cancel any in-progress stream
     await _streamSubscription?.cancel();
     _streamSubscription = null;
+
+    if (!mounted) return;
 
     setState(() {
       _isLoading = true;
@@ -60,9 +66,6 @@ class _AskScreenState extends State<AskScreen> {
       _currentQuestion = question;
       _currentAnswer = null;
     });
-
-    _questionController.clear();
-    FocusScope.of(context).unfocus();
 
     try {
       final stream = OpenAIService.askQuestionStream(question);
@@ -100,6 +103,7 @@ class _AskScreenState extends State<AskScreen> {
           if (mounted) {
             final completeAnswer = answerBuffer.toString();
             setState(() {
+              _isLoading = false;
               _isStreaming = false;
               _currentAnswer = completeAnswer;
             });
@@ -357,15 +361,12 @@ class _AskScreenState extends State<AskScreen> {
             blockquotePadding: const EdgeInsets.all(12),
           ),
         ),
-        if (_isStreaming) _buildStreamingCursor(),
+        if (_isStreaming)
+          const Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: _BlinkingCursor(),
+          ),
       ]),
-    );
-  }
-
-  Widget _buildStreamingCursor() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: _BlinkingCursor(),
     );
   }
 
@@ -433,6 +434,8 @@ class _AskScreenState extends State<AskScreen> {
 
 /// A blinking cursor widget that indicates the AI is still generating text.
 class _BlinkingCursor extends StatefulWidget {
+  const _BlinkingCursor();
+
   @override
   State<_BlinkingCursor> createState() => _BlinkingCursorState();
 }

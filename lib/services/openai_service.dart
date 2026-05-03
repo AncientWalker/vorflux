@@ -17,6 +17,10 @@ Format your response clearly:
 - Be respectful and scholarly in tone
 ''';
 
+  /// Sentinel value returned by [_extractContentFromSseLine] to signal
+  /// the end of the SSE stream (`[DONE]`).
+  static const String _done = '\x00DONE';
+
   static String get _apiKey {
     final key = dotenv.env['OPENAI_API_KEY'] ?? '';
     if (key.isEmpty || key == 'your_api_key_here') {
@@ -31,13 +35,14 @@ Format your response clearly:
   /// Parses an SSE byte stream into content delta strings.
   /// Exposed as a static method for testability.
   static Stream<String> parseSseStream(Stream<List<int>> byteStream) async* {
-    String buffer = '';
+    final buffer = StringBuffer();
     await for (final chunk in byteStream.transform(utf8.decoder)) {
-      buffer += chunk;
-      while (buffer.contains('\n')) {
-        final newlineIndex = buffer.indexOf('\n');
-        final line = buffer.substring(0, newlineIndex).trim();
-        buffer = buffer.substring(newlineIndex + 1);
+      buffer.write(chunk);
+      var text = buffer.toString();
+      while (text.contains('\n')) {
+        final newlineIndex = text.indexOf('\n');
+        final line = text.substring(0, newlineIndex).trim();
+        text = text.substring(newlineIndex + 1);
 
         if (line.isEmpty) continue;
         final content = _extractContentFromSseLine(line);
@@ -45,18 +50,20 @@ Format your response clearly:
         if (content == _done) return;
         yield content;
       }
+      buffer
+        ..clear()
+        ..write(text);
     }
 
     // Process any remaining data in the buffer
-    if (buffer.trim().isNotEmpty) {
-      final content = _extractContentFromSseLine(buffer.trim());
+    final remaining = buffer.toString().trim();
+    if (remaining.isNotEmpty) {
+      final content = _extractContentFromSseLine(remaining);
       if (content != null && content != _done) {
         yield content;
       }
     }
   }
-
-  static const String _done = '\x00DONE';
 
   /// Extracts the content delta from a single SSE line.
   /// Returns null if the line has no content, or [_done] if the stream is finished.
@@ -80,8 +87,15 @@ Format your response clearly:
 
   /// Streams the AI response token-by-token using OpenAI's SSE streaming API.
   /// Each yielded string is a content delta (partial token).
-  static Stream<String> askQuestionStream(String question) async* {
-    final client = http.Client();
+  ///
+  /// An optional [client] can be provided for testing; when omitted a new
+  /// [http.Client] is created (and closed when the stream is done).
+  static Stream<String> askQuestionStream(
+    String question, {
+    http.Client? client,
+  }) async* {
+    final ownClient = client == null;
+    client ??= http.Client();
     try {
       final request = http.Request('POST', Uri.parse(_baseUrl));
       request.headers.addAll({
@@ -102,16 +116,18 @@ Format your response clearly:
       final response = await client.send(request);
 
       if (response.statusCode != 200) {
-        final body = await response.stream.bytesToString();
         if (response.statusCode == 401) {
+          await response.stream.drain<void>();
           throw Exception(
             'Invalid API key. Please check your OpenAI API key in the .env file.',
           );
         } else if (response.statusCode == 429) {
+          await response.stream.drain<void>();
           throw Exception(
             'Rate limit exceeded. Please wait a moment and try again.',
           );
         } else {
+          final body = await response.stream.bytesToString();
           try {
             final errorData = jsonDecode(body);
             final errorMessage =
@@ -130,7 +146,7 @@ Format your response clearly:
         'Network error: Unable to reach OpenAI. Please check your connection.',
       );
     } finally {
-      client.close();
+      if (ownClient) client.close();
     }
   }
 }
