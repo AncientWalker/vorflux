@@ -5,8 +5,21 @@ import 'package:vorflux/providers/feed_provider.dart';
 import 'package:vorflux/screens/detail_screen.dart';
 import 'package:vorflux/theme/app_theme.dart';
 
-class FeedScreen extends StatelessWidget {
+class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
+
+  @override
+  State<FeedScreen> createState() => _FeedScreenState();
+}
+
+class _FeedScreenState extends State<FeedScreen> {
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,16 +28,23 @@ class FeedScreen extends StatelessWidget {
         if (feedProvider.isLoading) return const Center(child: CircularProgressIndicator());
         if (feedProvider.hasError) return _buildErrorState(context, feedProvider);
         if (feedProvider.isEmpty) return _buildEmptyState(context);
+
+        final filtered = feedProvider.filteredEntries;
+
         return Column(children: [
           _buildHeader(context, feedProvider),
-          Expanded(child: RefreshIndicator(
-            color: AppColors.primary, onRefresh: feedProvider.refreshFeed,
-            child: ListView.builder(
-              padding: const EdgeInsets.only(bottom: 16),
-              itemCount: feedProvider.entries.length,
-              itemBuilder: (context, index) => _buildFeedCard(context, feedProvider.entries[index]),
-            ),
-          )),
+          _buildSearchBar(context, feedProvider),
+          if (feedProvider.searchQuery.isNotEmpty && filtered.isEmpty)
+            _buildNoResultsState(context)
+          else
+            Expanded(child: RefreshIndicator(
+              color: AppColors.primary, onRefresh: feedProvider.refreshFeed,
+              child: ListView.builder(
+                padding: const EdgeInsets.only(bottom: 16),
+                itemCount: filtered.length,
+                itemBuilder: (context, index) => _buildFeedCard(context, filtered[index]),
+              ),
+            )),
         ]);
       },
     );
@@ -43,6 +63,57 @@ class FeedScreen extends StatelessWidget {
               style: TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w700)),
         ),
       ]),
+    );
+  }
+
+  Widget _buildSearchBar(BuildContext context, FeedProvider provider) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: TextField(
+        controller: _searchController,
+        onChanged: provider.setSearchQuery,
+        decoration: InputDecoration(
+          hintText: 'Search the community feed...',
+          prefixIcon: Icon(Icons.search, color: AppColors.textHint, size: 20),
+          suffixIcon: provider.searchQuery.isNotEmpty
+              ? IconButton(
+                  icon: Icon(Icons.clear, color: AppColors.textHint, size: 20),
+                  onPressed: () {
+                    _searchController.clear();
+                    provider.setSearchQuery('');
+                  },
+                )
+              : null,
+          filled: true,
+          fillColor: AppColors.surfaceVariant,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: AppColors.primary, width: 1.5),
+          ),
+        ),
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.textPrimary),
+      ),
+    );
+  }
+
+  Widget _buildNoResultsState(BuildContext context) {
+    return Expanded(
+      child: Center(child: Padding(padding: const EdgeInsets.all(32), child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.search_off, size: 48, color: AppColors.textHint.withValues(alpha: 0.5)),
+        const SizedBox(height: 16),
+        Text('No results found', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.textSecondary)),
+        const SizedBox(height: 4),
+        Text('Try a different keyword', style: Theme.of(context).textTheme.bodyMedium, textAlign: TextAlign.center),
+      ]))),
     );
   }
 

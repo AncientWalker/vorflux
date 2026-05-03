@@ -10,11 +10,35 @@ class FeedProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _hasError = false;
   StreamSubscription? _subscription;
+  String _searchQuery = '';
 
   List<QAEntry> get entries => _entries;
   bool get isLoading => _isLoading;
   bool get hasError => _hasError;
   bool get isEmpty => _entries.isEmpty;
+  String get searchQuery => _searchQuery;
+
+  @visibleForTesting
+  set entriesForTesting(List<QAEntry> entries) {
+    _entries = entries;
+  }
+
+  /// Returns entries filtered by the current search query.
+  /// Matches against question, answer, and author name (case-insensitive).
+  List<QAEntry> get filteredEntries {
+    if (_searchQuery.isEmpty) return _entries;
+    final query = _searchQuery.toLowerCase();
+    return _entries.where((entry) {
+      return entry.question.toLowerCase().contains(query) ||
+          entry.answer.toLowerCase().contains(query) ||
+          (entry.askedBy?.toLowerCase().contains(query) ?? false);
+    }).toList();
+  }
+
+  void setSearchQuery(String query) {
+    _searchQuery = query;
+    notifyListeners();
+  }
 
   void listenToFeed() {
     if (!FirebaseConfig.isAvailable) {
@@ -74,6 +98,7 @@ class FeedProvider extends ChangeNotifier {
     _subscription?.cancel();
     _subscription = null;
     _entries = [];
+    _searchQuery = '';
     notifyListeners();
   }
 
