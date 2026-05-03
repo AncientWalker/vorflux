@@ -27,7 +27,7 @@ class BookmarkProvider extends ChangeNotifier {
 
     _subscription?.cancel();
     _isLoading = true;
-    Future.microtask(notifyListeners);
+    Future.microtask(() => notifyListeners());
 
     _subscription = FirestoreService.getUserBookmarks(userId).listen(
       (threads) {
@@ -48,7 +48,7 @@ class BookmarkProvider extends ChangeNotifier {
 
   Future<void> _loadFromLocalDb() async {
     _isLoading = true;
-    Future.microtask(notifyListeners);
+    Future.microtask(() => notifyListeners());
 
     try {
       _threads = await DatabaseService.getAllBookmarks();
@@ -83,8 +83,7 @@ class BookmarkProvider extends ChangeNotifier {
   Future<ConversationThread?> getFullThread(String threadId) async {
     try {
       if (!FirebaseConfig.isAvailable) {
-        return await DatabaseService.getThread(threadId) ??
-            _findThread(threadId);
+        return await DatabaseService.getThread(threadId) ?? _findThread(threadId);
       }
       return await FirestoreService.getThread(threadId) ?? _findThread(threadId);
     } catch (e) {

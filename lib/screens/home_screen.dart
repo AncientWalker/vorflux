@@ -31,9 +31,11 @@ class _HomeScreenState extends State<HomeScreen> {
       const SavedScreen(),
     ];
     super.initState();
-    final authProvider = context.read<AuthProvider>();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+
+      final authProvider = context.read<AuthProvider>();
       context.read<HistoryProvider>().listenToUserThreads(
             userId: authProvider.uid,
             userName: authProvider.displayName,
@@ -259,47 +261,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Always verify citations with scholarly sources. AI can make mistakes.',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: AppColors.textSecondary),
+                      'Always verify AI-generated answers with qualified scholars.',
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
                 ],
               ),
             ),
-            if (!FirebaseConfig.isAvailable) ...[
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.goldLight.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.cloud_off, color: AppColors.goldDark, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Running in demo mode. Data is stored locally.',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: AppColors.goldDark),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Close', style: TextStyle(color: AppColors.primary)),
+            child: const Text('Close'),
           ),
         ],
       ),
