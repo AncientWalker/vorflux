@@ -1,38 +1,61 @@
 # Firebase Setup Guide for Vorflux
 
-This guide explains how to complete the Firebase setup for the Vorflux Islamic Q&A app.
+This guide explains the Firebase configuration for the Vorflux Islamic Q&A app.
 
-## Prerequisites
+## Current Live Configuration
 
-- A Google account
-- Access to [Firebase Console](https://console.firebase.google.com/)
-- Flutter CLI installed
+**Android is the currently configured live Firebase platform.** The app is registered in Firebase project `ask-quran-ad35f` with Android package name `com.ask.quran`. Other platforms (iOS, web, macOS, Windows, Linux) are not yet registered and will automatically fall back to offline/demo mode at runtime.
 
-## Step 1: Create a Firebase Project
+## Firebase Console Prerequisites
 
-1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Click "Add project"
-3. Name it "Vorflux" (or any name you prefer)
-4. Enable/disable Google Analytics as you prefer
-5. Click "Create project"
+Before Android Google Sign-In works at runtime, the following **must** be configured in the [Firebase Console](https://console.firebase.google.com/) for project `ask-quran-ad35f`:
 
-## Step 2: Enable Authentication
+> **⚠️ Current status:** The checked-in `google-services.json` contains only a web OAuth client (`client_type: 3`). Google Sign-In on Android requires an Android OAuth client (`client_type: 1`) with registered SHA fingerprints. Until the steps below are completed, Firebase initializes successfully but **Sign in with Google will fail** at runtime.
 
-1. In the Firebase Console, go to **Authentication** → **Sign-in method**
-2. Click **Google** provider
-3. Toggle it to **Enabled**
-4. Set a project support email
-5. Click **Save**
+### 1. Authentication — Google Provider
 
-## Step 3: Enable Cloud Firestore
+1. Go to **Authentication** → **Sign-in method**
+2. Enable the **Google** provider
+3. Set a project support email
+4. Click **Save**
 
-1. In the Firebase Console, go to **Firestore Database**
-2. Click **Create database**
-3. Choose **Start in test mode** (for development)
-4. Select your preferred region
-5. Click **Enable**
+### 2. Android SHA Fingerprints for Google Sign-In (Required)
 
-### Recommended Firestore Security Rules
+Google Sign-In on Android requires SHA certificate fingerprints registered in the Firebase Console. Without them, the `google-services.json` will not include the Android OAuth client entry needed for sign-in.
+
+1. Obtain your debug SHA-1 fingerprint:
+   ```bash
+   cd android && ./gradlew signingReport
+   ```
+2. Go to **Project Settings** → **General** → **Your apps** → the Android app (`com.ask.quran`)
+3. Under **SHA certificate fingerprints**, add your debug (and release) SHA-1 and SHA-256 fingerprints
+4. Download the **updated** `google-services.json` from the Firebase Console and replace `android/app/google-services.json`
+5. Verify the new file contains an `oauth_client` entry with `"client_type": 1` and your `package_name` + `certificate_hash` — this confirms Android sign-in is properly wired
+
+> **Important:** Without completing this step, the app builds and Firebase initializes, but tapping **Sign in with Google** will fail with a Google Sign-In configuration error.
+
+### 3. Cloud Firestore Database
+
+1. Go to **Firestore Database**
+2. Click **Create database** (if not already created)
+3. Choose your preferred region
+4. Start in **test mode** for development, or apply the security rules below for production
+
+### 4. Firestore Composite Index
+
+The app queries user-specific questions sorted by creation time. This requires a composite index:
+
+- **Collection:** `questions`
+- **Fields:**
+  - `userId` — Ascending
+  - `createdAt` — Descending
+- **Query scope:** Collection
+
+Create this index in **Firestore Database** → **Indexes** → **Composite** → **Create index**.
+
+> **Tip:** If the index is missing, the app's Firestore queries will fail. The Firebase SDK logs will include a direct URL to create the required index automatically.
+
+## Recommended Firestore Security Rules
 
 ```
 rules_version = '2';
@@ -50,26 +73,17 @@ service cloud.firestore {
 }
 ```
 
-### Required Firestore Index
+## Firebase Options
 
-Create a composite index for the `questions` collection:
-- Collection: `questions`
-- Fields: `userId` (Ascending), `createdAt` (Descending)
-- Query scope: Collection
+The Android Firebase options in `lib/firebase_options.dart` are configured with the real values from project `ask-quran-ad35f`. Non-Android platforms throw `UnsupportedError`, which the app's `main.dart` catches to activate demo mode.
 
-## Step 4: Register Android App
+To add a new platform:
+1. Register the platform app in the Firebase Console under project `ask-quran-ad35f`
+2. Download the platform-specific config file (if applicable)
+3. Add the platform's `FirebaseOptions` in `lib/firebase_options.dart`
+4. Update `currentPlatform` to return the new options instead of throwing `UnsupportedError`
 
-1. In Firebase Console, click the **Android** icon to add an Android app
-2. Package name: `com.vorflux.vorflux`
-3. App nickname: `Vorflux Android`
-4. Get SHA-1 fingerprint: `cd android && ./gradlew signingReport`
-5. Download `google-services.json` and replace `android/app/google-services.json`
-
-## Step 5: Update Firebase Options
-
-Run `flutterfire configure --project=YOUR_PROJECT_ID` or manually edit `lib/firebase_options.dart`.
-
-## Step 6: Build and Test
+## Build and Test
 
 ```bash
 flutter pub get
