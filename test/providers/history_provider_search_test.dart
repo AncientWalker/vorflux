@@ -16,7 +16,7 @@ void main() {
     });
 
     test('setSearchQuery updates the query and notifies listeners', () {
-      int notifyCount = 0;
+      var notifyCount = 0;
       provider.addListener(() => notifyCount++);
 
       provider.setSearchQuery('fasting');
@@ -51,10 +51,10 @@ void main() {
     late HistoryProvider provider;
 
     final testEntries = [
-      makeEntry(id: '1', question: 'What does Islam say about fasting?', answer: 'Fasting in Ramadan is one of the five pillars of Islam.'),
-      makeEntry(id: '2', question: 'How to be patient?', answer: 'Patience (sabr) is a virtue highly praised in the Quran.'),
-      makeEntry(id: '3', question: 'What is zakat?', answer: 'Zakat is the obligatory charity in Islam, one of the five pillars.'),
-      makeEntry(id: '4', question: 'Tell me about prayer', answer: 'Salah is performed five times daily and includes fasting-related supplications during Ramadan.'),
+      makeThread(id: '1', title: 'What does Islam say about fasting?', lastMessagePreview: 'Fasting in Ramadan is one of the five pillars of Islam.'),
+      makeThread(id: '2', title: 'How to be patient?', lastMessagePreview: 'Patience (sabr) is a virtue highly praised in the Quran.'),
+      makeThread(id: '3', title: 'What is zakat?', lastMessagePreview: 'Zakat is the obligatory charity in Islam, one of the five pillars.'),
+      makeThread(id: '4', title: 'Tell me about prayer', lastMessagePreview: 'Salah is performed five times daily and includes fasting-related supplications during Ramadan.'),
     ];
 
     setUp(() {
@@ -66,15 +66,14 @@ void main() {
       expect(provider.filteredEntries.length, 4);
     });
 
-    test('filters by question keyword', () {
+    test('filters by title keyword', () {
       provider.setSearchQuery('fasting');
       final result = provider.filteredEntries;
-      // entry 1 has "fasting" in question, entry 4 has "fasting-related" in answer
       expect(result.length, 2);
       expect(result.map((e) => e.id).toSet(), {'1', '4'});
     });
 
-    test('filters by answer keyword', () {
+    test('filters by preview keyword', () {
       provider.setSearchQuery('pillars');
       final result = provider.filteredEntries;
       expect(result.length, 2);
@@ -100,7 +99,7 @@ void main() {
       expect(provider.filteredEntries, isEmpty);
     });
 
-    test('matches across question and answer fields', () {
+    test('matches across title and preview fields', () {
       provider.setSearchQuery('ramadan');
       final result = provider.filteredEntries;
       expect(result.length, 2);
@@ -110,7 +109,6 @@ void main() {
     test('single character query matches expected entries', () {
       provider.setSearchQuery('z');
       final result = provider.filteredEntries;
-      // 'z' appears in entry 3 (question: "zakat", answer: "Zakat")
       expect(result.length, 1);
       expect(result[0].id, '3');
     });
@@ -118,7 +116,7 @@ void main() {
     test('whitespace in query is handled', () {
       provider.setSearchQuery('five pillars');
       final result = provider.filteredEntries;
-      expect(result.length, 2); // entries 1 and 3 both mention "five pillars"
+      expect(result.length, 2);
     });
 
     test('clearing query restores all entries', () {
@@ -131,7 +129,7 @@ void main() {
     test('filteredEntries does not modify original entries list', () {
       provider.setSearchQuery('fasting');
       expect(provider.filteredEntries.length, 2);
-      expect(provider.entries.length, 4); // original list unchanged
+      expect(provider.entries.length, 4);
     });
 
     test('leading/trailing whitespace in query is trimmed', () {

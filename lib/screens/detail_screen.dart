@@ -1,25 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:vorflux/models/qa_entry.dart';
+import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/theme/app_theme.dart';
+import 'package:vorflux/widgets/chat_message_bubble.dart';
+import 'package:vorflux/widgets/user_avatar.dart';
 
 class DetailScreen extends StatelessWidget {
-  final QAEntry entry;
+  final ConversationThread thread;
   final bool isFeedItem;
 
-  const DetailScreen({super.key, required this.entry, this.isFeedItem = false});
+  const DetailScreen({super.key, required this.thread, this.isFeedItem = false});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Full Answer'),
+        title: const Text('Conversation'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.copy), tooltip: 'Copy answer',
+            icon: const Icon(Icons.copy), tooltip: 'Copy conversation',
             onPressed: () {
-              Clipboard.setData(ClipboardData(text: '${entry.question}\n\n${entry.answer}'));
+              final buffer = StringBuffer();
+              for (final msg in thread.messages) {
+                buffer.writeln(msg.role == 'user' ? 'Q: ${msg.content}' : 'A: ${msg.content}');
+                buffer.writeln();
+              }
+              Clipboard.setData(ClipboardData(text: buffer.toString().trim()));
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                 content: const Text('Copied to clipboard'), behavior: SnackBarBehavior.floating,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -31,76 +37,30 @@ class DetailScreen extends StatelessWidget {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          if (isFeedItem && entry.askedBy != null) ...[
+          if (isFeedItem && thread.userName?.isNotEmpty == true) ...[
             Row(children: [
-              _buildUserAvatar(),
+              UserAvatar(photoURL: thread.userPhotoURL, userName: thread.userName, radius: 16),
               const SizedBox(width: 8),
-              Text('Asked by ${entry.askedBy}', style: Theme.of(context).textTheme.bodyMedium),
+              Text('Asked by ${thread.userName}', style: Theme.of(context).textTheme.bodyMedium),
               const Spacer(),
-              Text(entry.formattedTimestamp, style: Theme.of(context).textTheme.bodySmall),
+              Text(thread.formattedTimestamp, style: Theme.of(context).textTheme.bodySmall),
             ]),
             const SizedBox(height: 16),
           ],
+          // Thread title header
           Container(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(16),
+            margin: const EdgeInsets.only(bottom: 16),
             decoration: BoxDecoration(
-              gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [AppColors.primary, AppColors.primaryLight]),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))],
+              gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+                colors: [AppColors.primary, AppColors.primaryLight]),
+              borderRadius: BorderRadius.circular(16),
             ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Icon(Icons.help_outline, color: Colors.white.withValues(alpha: 0.8), size: 18),
-                const SizedBox(width: 8),
-                Text('Question', style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1)),
-              ]),
-              const SizedBox(height: 8),
-              Text(entry.question, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600, height: 1.4)),
-              if (!isFeedItem) ...[
-                const SizedBox(height: 8),
-                Text(entry.formattedTimestamp, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12)),
-              ],
-            ]),
+            child: Text(thread.title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
           ),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white, borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.gold.withValues(alpha: 0.2)),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
-            ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: AppColors.gold.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
-                  child: Icon(Icons.auto_awesome, color: AppColors.gold, size: 20),
-                ),
-                const SizedBox(width: 10),
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Answer', style: Theme.of(context).textTheme.titleMedium),
-                  Text('From Quran & Hadith sources', style: Theme.of(context).textTheme.bodySmall),
-                ]),
-              ]),
-              const SizedBox(height: 16), const Divider(height: 1), const SizedBox(height: 16),
-              MarkdownBody(
-                data: entry.answer, selectable: true,
-                styleSheet: MarkdownStyleSheet(
-                  p: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.8),
-                  strong: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700),
-                  h1: Theme.of(context).textTheme.headlineMedium,
-                  h2: Theme.of(context).textTheme.headlineSmall,
-                  listBullet: Theme.of(context).textTheme.bodyLarge,
-                  blockquoteDecoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.05),
-                    border: Border(left: BorderSide(color: AppColors.gold, width: 4)),
-                  ),
-                  blockquotePadding: const EdgeInsets.all(12),
-                ),
-              ),
-            ]),
-          ),
+          // All messages
+          ...thread.messages.map((msg) => ChatMessageBubble(message: msg)),
+          // Disclaimer
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(12),
@@ -115,21 +75,6 @@ class DetailScreen extends StatelessWidget {
           const SizedBox(height: 32),
         ]),
       ),
-    );
-  }
-
-  Widget _buildUserAvatar() {
-    if (entry.userPhotoURL != null && entry.userPhotoURL!.isNotEmpty) {
-      return CircleAvatar(
-        radius: 16, backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-        backgroundImage: NetworkImage(entry.userPhotoURL!),
-        onBackgroundImageError: (_, __) {},
-      );
-    }
-    return CircleAvatar(
-      radius: 16, backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-      child: Text(entry.askedBy![0].toUpperCase(),
-          style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700)),
     );
   }
 }

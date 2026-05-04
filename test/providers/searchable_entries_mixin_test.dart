@@ -1,28 +1,27 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vorflux/models/qa_entry.dart';
+import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/providers/searchable_entries_mixin.dart';
 
 import '../helpers/test_factories.dart';
 
-/// Minimal concrete implementation to exercise the mixin in isolation.
 class _TestProvider extends ChangeNotifier with SearchableEntriesMixin {
-  List<QAEntry> _entries = [];
+  List<ConversationThread> _entries = [];
 
   @override
-  List<QAEntry> get entries => _entries;
+  List<ConversationThread> get entries => _entries;
 
   @override
   @visibleForTesting
-  set entriesForTesting(List<QAEntry> entries) {
+  set entriesForTesting(List<ConversationThread> entries) {
     _entries = entries;
   }
 
   @override
-  List<String> searchableFields(QAEntry entry) => [
-        entry.question,
-        entry.answer,
-        entry.askedBy ?? '',
+  List<String> searchableFields(ConversationThread entry) => [
+        entry.title,
+        entry.lastMessagePreview,
+        entry.userName ?? '',
       ];
 }
 
@@ -31,9 +30,9 @@ void main() {
     late _TestProvider provider;
 
     final testEntries = [
-      makeEntry(id: '1', question: 'Alpha question', answer: 'Bravo answer', askedBy: 'Charlie'),
-      makeEntry(id: '2', question: 'Delta question', answer: 'Echo answer', askedBy: 'Foxtrot'),
-      makeEntry(id: '3', question: 'Golf question', answer: 'Hotel answer', askedBy: null),
+      makeThread(id: '1', title: 'Alpha question', lastMessagePreview: 'Bravo answer', userName: 'Charlie'),
+      makeThread(id: '2', title: 'Delta question', lastMessagePreview: 'Echo answer', userName: 'Foxtrot'),
+      makeThread(id: '3', title: 'Golf question', lastMessagePreview: 'Hotel answer', userName: null),
     ];
 
     setUp(() {
@@ -50,7 +49,7 @@ void main() {
     });
 
     test('setSearchQuery notifies listeners', () {
-      int count = 0;
+      var count = 0;
       provider.addListener(() => count++);
       provider.setSearchQuery('alpha');
       expect(count, 1);
@@ -65,11 +64,11 @@ void main() {
 
     test('clearSearch resets query without notifying', () {
       provider.setSearchQuery('something');
-      int count = 0;
+      var count = 0;
       provider.addListener(() => count++);
       provider.clearSearch();
       expect(provider.searchQuery, '');
-      expect(count, 0); // clearSearch does not notify
+      expect(count, 0);
     });
 
     test('trims leading/trailing whitespace', () {
