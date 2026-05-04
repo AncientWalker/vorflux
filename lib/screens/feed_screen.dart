@@ -4,27 +4,64 @@ import 'package:vorflux/models/qa_entry.dart';
 import 'package:vorflux/providers/feed_provider.dart';
 import 'package:vorflux/screens/detail_screen.dart';
 import 'package:vorflux/theme/app_theme.dart';
+import 'package:vorflux/widgets/search_bar.dart';
 
-class FeedScreen extends StatelessWidget {
+class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
+
+  @override
+  State<FeedScreen> createState() => _FeedScreenState();
+}
+
+class _FeedScreenState extends State<FeedScreen> {
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  /// Keeps the [TextEditingController] in sync when the provider's
+  /// search query is cleared externally (e.g. via [stopListening]).
+  void _syncController(String providerQuery) {
+    if (_searchController.text != providerQuery) {
+      _searchController.text = providerQuery;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<FeedProvider>(
       builder: (context, feedProvider, child) {
+        _syncController(feedProvider.searchQuery);
+
         if (feedProvider.isLoading) return const Center(child: CircularProgressIndicator());
         if (feedProvider.hasError) return _buildErrorState(context, feedProvider);
         if (feedProvider.isEmpty) return _buildEmptyState(context);
+
+        final filtered = feedProvider.filteredEntries;
+
         return Column(children: [
           _buildHeader(context, feedProvider),
-          Expanded(child: RefreshIndicator(
-            color: AppColors.primary, onRefresh: feedProvider.refreshFeed,
-            child: ListView.builder(
-              padding: const EdgeInsets.only(bottom: 16),
-              itemCount: feedProvider.entries.length,
-              itemBuilder: (context, index) => _buildFeedCard(context, feedProvider.entries[index]),
-            ),
-          )),
+          AppSearchBar(
+            controller: _searchController,
+            hintText: 'Search the community feed...',
+            searchQuery: feedProvider.searchQuery,
+            onChanged: feedProvider.setSearchQuery,
+            onClear: () => feedProvider.setSearchQuery(''),
+          ),
+          if (feedProvider.searchQuery.isNotEmpty && filtered.isEmpty)
+            const NoResultsState()
+          else
+            Expanded(child: RefreshIndicator(
+              color: AppColors.primary, onRefresh: feedProvider.refreshFeed,
+              child: ListView.builder(
+                padding: const EdgeInsets.only(bottom: 16),
+                itemCount: filtered.length,
+                itemBuilder: (context, index) => _buildFeedCard(context, filtered[index]),
+              ),
+            )),
         ]);
       },
     );

@@ -4,23 +4,60 @@ import 'package:vorflux/models/qa_entry.dart';
 import 'package:vorflux/providers/history_provider.dart';
 import 'package:vorflux/screens/detail_screen.dart';
 import 'package:vorflux/theme/app_theme.dart';
+import 'package:vorflux/widgets/search_bar.dart';
 
-class HistoryScreen extends StatelessWidget {
+class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
+
+  @override
+  State<HistoryScreen> createState() => _HistoryScreenState();
+}
+
+class _HistoryScreenState extends State<HistoryScreen> {
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  /// Keeps the [TextEditingController] in sync when the provider's
+  /// search query is cleared externally (e.g. via [stopListening]).
+  void _syncController(String providerQuery) {
+    if (_searchController.text != providerQuery) {
+      _searchController.text = providerQuery;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<HistoryProvider>(
       builder: (context, historyProvider, child) {
+        _syncController(historyProvider.searchQuery);
+
         if (historyProvider.isLoading) return const Center(child: CircularProgressIndicator());
         if (historyProvider.isEmpty) return _buildEmptyState(context);
+
+        final filtered = historyProvider.filteredEntries;
+
         return Column(children: [
           _buildHeader(context, historyProvider),
-          Expanded(child: ListView.builder(
-            padding: const EdgeInsets.only(bottom: 16),
-            itemCount: historyProvider.entries.length,
-            itemBuilder: (context, index) => _buildHistoryCard(context, historyProvider.entries[index], historyProvider),
-          )),
+          AppSearchBar(
+            controller: _searchController,
+            hintText: 'Search your questions...',
+            searchQuery: historyProvider.searchQuery,
+            onChanged: historyProvider.setSearchQuery,
+            onClear: () => historyProvider.setSearchQuery(''),
+          ),
+          if (historyProvider.searchQuery.isNotEmpty && filtered.isEmpty)
+            const NoResultsState()
+          else
+            Expanded(child: ListView.builder(
+              padding: const EdgeInsets.only(bottom: 16),
+              itemCount: filtered.length,
+              itemBuilder: (context, index) => _buildHistoryCard(context, filtered[index], historyProvider),
+            )),
         ]);
       },
     );
