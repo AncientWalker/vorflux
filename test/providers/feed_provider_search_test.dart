@@ -16,7 +16,7 @@ void main() {
     });
 
     test('setSearchQuery updates the query and notifies listeners', () {
-      int notifyCount = 0;
+      var notifyCount = 0;
       provider.addListener(() => notifyCount++);
 
       provider.setSearchQuery('patience');
@@ -51,10 +51,10 @@ void main() {
     late FeedProvider provider;
 
     final testEntries = [
-      makeEntry(id: '1', question: 'What does Islam say about fasting?', answer: 'Fasting in Ramadan is one of the five pillars.', askedBy: 'Ahmed'),
-      makeEntry(id: '2', question: 'How to be patient?', answer: 'Patience (sabr) is a virtue praised in the Quran.', askedBy: 'Fatima'),
-      makeEntry(id: '3', question: 'What is zakat?', answer: 'Zakat is obligatory charity, one of the five pillars.', askedBy: 'Omar'),
-      makeEntry(id: '4', question: 'Tell me about prayer', answer: 'Salah is performed five times daily.', askedBy: 'Ahmed Khan'),
+      makeThread(id: '1', title: 'What does Islam say about fasting?', lastMessagePreview: 'Fasting in Ramadan is one of the five pillars.', userName: 'Ahmed'),
+      makeThread(id: '2', title: 'How to be patient?', lastMessagePreview: 'Patience (sabr) is a virtue praised in the Quran.', userName: 'Fatima'),
+      makeThread(id: '3', title: 'What is zakat?', lastMessagePreview: 'Zakat is obligatory charity, one of the five pillars.', userName: 'Omar'),
+      makeThread(id: '4', title: 'Tell me about prayer', lastMessagePreview: 'Salah is performed five times daily.', userName: 'Ahmed Khan'),
     ];
 
     setUp(() {
@@ -66,14 +66,14 @@ void main() {
       expect(provider.filteredEntries.length, 4);
     });
 
-    test('filters by question keyword', () {
+    test('filters by title keyword', () {
       provider.setSearchQuery('fasting');
       final result = provider.filteredEntries;
       expect(result.length, 1);
       expect(result[0].id, '1');
     });
 
-    test('filters by answer keyword', () {
+    test('filters by preview keyword', () {
       provider.setSearchQuery('pillars');
       final result = provider.filteredEntries;
       expect(result.length, 2);
@@ -83,7 +83,7 @@ void main() {
     test('filters by author name', () {
       provider.setSearchQuery('ahmed');
       final result = provider.filteredEntries;
-      expect(result.length, 2); // Ahmed and Ahmed Khan
+      expect(result.length, 2);
       expect(result.map((e) => e.id).toSet(), {'1', '4'});
     });
 
@@ -106,9 +106,9 @@ void main() {
       expect(provider.filteredEntries, isEmpty);
     });
 
-    test('null askedBy does not cause error', () {
+    test('null userName does not cause error', () {
       provider.entriesForTesting = [
-        makeEntry(id: '1', question: 'Test', answer: 'Answer', askedBy: null),
+        makeThread(id: '1', title: 'Test', lastMessagePreview: 'Answer', userName: null),
       ];
       provider.setSearchQuery('anonymous');
       expect(provider.filteredEntries, isEmpty);
@@ -117,7 +117,6 @@ void main() {
     test('matches across multiple fields', () {
       provider.setSearchQuery('five');
       final result = provider.filteredEntries;
-      // "five" appears in entries 1, 3, and 4 answers
       expect(result.length, 3);
       expect(result.map((e) => e.id).toSet(), {'1', '3', '4'});
     });
@@ -125,13 +124,12 @@ void main() {
     test('whitespace in query is handled', () {
       provider.setSearchQuery('five pillars');
       final result = provider.filteredEntries;
-      expect(result.length, 2); // entries 1 and 3
+      expect(result.length, 2);
     });
 
     test('single character query matches expected entries', () {
       provider.setSearchQuery('z');
       final result = provider.filteredEntries;
-      // 'z' appears in entry 3 (question: "zakat", answer: "Zakat")
       expect(result.length, 1);
       expect(result[0].id, '3');
     });
@@ -146,7 +144,7 @@ void main() {
     test('filteredEntries does not modify original entries list', () {
       provider.setSearchQuery('fasting');
       expect(provider.filteredEntries.length, 1);
-      expect(provider.entries.length, 4); // original list unchanged
+      expect(provider.entries.length, 4);
     });
 
     test('leading/trailing whitespace in query is trimmed', () {

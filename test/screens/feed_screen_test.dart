@@ -6,7 +6,6 @@ import 'package:vorflux/screens/feed_screen.dart';
 
 import '../helpers/test_factories.dart';
 
-/// Wraps [FeedScreen] with a [ChangeNotifierProvider] for widget tests.
 Widget _buildTestApp(FeedProvider provider) {
   return MaterialApp(
     home: ChangeNotifierProvider<FeedProvider>.value(
@@ -21,24 +20,9 @@ void main() {
     late FeedProvider provider;
 
     final testEntries = [
-      makeEntry(
-        id: '1',
-        question: 'What does Islam say about fasting?',
-        answer: 'Fasting in Ramadan is one of the five pillars.',
-        askedBy: 'Ahmed',
-      ),
-      makeEntry(
-        id: '2',
-        question: 'How to be patient?',
-        answer: 'Patience (sabr) is a virtue praised in the Quran.',
-        askedBy: 'Fatima',
-      ),
-      makeEntry(
-        id: '3',
-        question: 'What is zakat?',
-        answer: 'Zakat is obligatory charity.',
-        askedBy: 'Omar',
-      ),
+      makeThread(id: '1', title: 'What does Islam say about fasting?', lastMessagePreview: 'Fasting in Ramadan is one of the five pillars.', userName: 'Ahmed'),
+      makeThread(id: '2', title: 'How to be patient?', lastMessagePreview: 'Patience (sabr) is a virtue praised in the Quran.', userName: 'Fatima'),
+      makeThread(id: '3', title: 'What is zakat?', lastMessagePreview: 'Zakat is obligatory charity.', userName: 'Omar'),
     ];
 
     setUp(() {
@@ -63,8 +47,7 @@ void main() {
       expect(find.text('What is zakat?'), findsOneWidget);
     });
 
-    testWidgets('typing in search field filters displayed entries',
-        (tester) async {
+    testWidgets('typing in search field filters displayed entries', (tester) async {
       await tester.pumpWidget(_buildTestApp(provider));
       await tester.pumpAndSettle();
 
@@ -102,16 +85,13 @@ void main() {
       await tester.pumpWidget(_buildTestApp(provider));
       await tester.pumpAndSettle();
 
-      // Filter down
       await tester.enterText(find.byType(TextField), 'zakat');
       await tester.pumpAndSettle();
       expect(find.text('How to be patient?'), findsNothing);
 
-      // Clear
       await tester.tap(find.byIcon(Icons.clear));
       await tester.pumpAndSettle();
 
-      // All entries restored
       expect(find.text('What does Islam say about fasting?'), findsOneWidget);
       expect(find.text('How to be patient?'), findsOneWidget);
       expect(find.text('What is zakat?'), findsOneWidget);
@@ -122,7 +102,7 @@ void main() {
       await tester.pumpWidget(_buildTestApp(provider));
       await tester.pumpAndSettle();
 
-      expect(find.text('No Questions Yet'), findsOneWidget);
+      expect(find.text('No Conversations Yet'), findsOneWidget);
       expect(find.byType(TextField), findsNothing);
     });
 

@@ -1,64 +1,67 @@
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
-import 'package:vorflux/models/qa_entry.dart';
+import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/providers/searchable_entries_mixin.dart';
+import 'package:vorflux/services/database_service.dart';
 import 'package:vorflux/services/firebase_config.dart';
 import 'package:vorflux/services/firestore_service.dart';
-import 'package:vorflux/services/database_service.dart';
 
 class FeedProvider extends ChangeNotifier with SearchableEntriesMixin {
-  List<QAEntry> _entries = [];
+  List<ConversationThread> _threads = [];
   bool _isLoading = false;
   bool _hasError = false;
   StreamSubscription? _subscription;
 
+  List<ConversationThread> get threads => _threads;
+
   @override
-  List<QAEntry> get entries => _entries;
+  List<ConversationThread> get entries => _threads;
+
   bool get isLoading => _isLoading;
   bool get hasError => _hasError;
-  bool get isEmpty => _entries.isEmpty;
+  bool get isEmpty => _threads.isEmpty;
 
   @override
   @visibleForTesting
-  set entriesForTesting(List<QAEntry> entries) {
-    _entries = entries;
+  set entriesForTesting(List<ConversationThread> entries) {
+    _threads = entries;
   }
 
-  /// Matches against question, answer, and author name (case-insensitive).
   @override
-  List<String> searchableFields(QAEntry entry) => [
-        entry.question,
-        entry.answer,
-        entry.askedBy ?? '',
+  List<String> searchableFields(ConversationThread entry) => [
+        entry.title,
+        entry.lastMessagePreview,
+        entry.userName ?? '',
       ];
 
   void listenToFeed() {
     if (!FirebaseConfig.isAvailable) {
-      // Offline mode: show all local entries as the "feed"
-      _loadFromLocalDb();
+      Future.microtask(_loadFromLocalDb);
       return;
     }
 
-    // Firestore mode
-    _subscription?.cancel();
-    _isLoading = true;
-    _hasError = false;
-    notifyListeners();
+    Future.microtask(() {
+      _subscription?.cancel();
+      _isLoading = true;
+      _hasError = false;
+      notifyListeners();
 
-    _subscription = FirestoreService.getAllQuestions().listen(
-      (entries) {
-        _entries = entries;
-        _isLoading = false;
-        _hasError = false;
-        notifyListeners();
-      },
-      onError: (e) {
-        _hasError = true;
-        _isLoading = false;
-        debugPrint('Error loading feed: $e');
-        notifyListeners();
-      },
-    );
+      _subscription = FirestoreService.getAllThreads().listen(
+        (threads) {
+          _threads = threads;
+          _isLoading = false;
+          _hasError = false;
+          notifyListeners();
+        },
+        onError: (e) {
+          _hasError = true;
+          _isLoading = false;
+          debugPrint('Error loading feed: $e');
+          notifyListeners();
+        },
+      );
+    });
   }
 
   Future<void> _loadFromLocalDb() async {
@@ -67,7 +70,7 @@ class FeedProvider extends ChangeNotifier with SearchableEntriesMixin {
     notifyListeners();
 
     try {
-      _entries = await DatabaseService.getAllEntries();
+      _threads = await DatabaseService.getAllThreads();
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -78,18 +81,31 @@ class FeedProvider extends ChangeNotifier with SearchableEntriesMixin {
     }
   }
 
+  Future<ConversationThread> getFullThread(String threadId) async {
+    final threadMeta = _threads.firstWhere((t) => t.id == threadId);
+
+    if (FirebaseConfig.isAvailable) {
+      final messages = await FirestoreService.getThreadMessages(threadId);
+      return threadMeta.copyWith(messages: messages);
+    }
+
+    final fullThread = await DatabaseService.getThread(threadId);
+    return fullThread ?? threadMeta;
+  }
+
   Future<void> refreshFeed() async {
     if (!FirebaseConfig.isAvailable) {
       await _loadFromLocalDb();
       return;
     }
+
     listenToFeed();
   }
 
   void stopListening() {
     _subscription?.cancel();
     _subscription = null;
-    _entries = [];
+    _threads = [];
     clearSearch();
     notifyListeners();
   }

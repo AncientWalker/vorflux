@@ -1,21 +1,27 @@
-import 'package:vorflux/models/qa_entry.dart';
+import 'package:vorflux/models/conversation_thread.dart';
 
-/// Creates a [QAEntry] with sensible defaults for tests.
-QAEntry makeEntry({
+/// Creates a [ConversationThread] with sensible defaults for tests.
+ConversationThread makeThread({
   String id = '1',
-  String question = 'Test question',
-  String answer = 'Test answer',
-  String? askedBy,
+  String title = 'Test question',
+  String lastMessagePreview = 'Test answer',
+  String? userName,
   String? userPhotoURL,
   String? userId,
+  int messageCount = 2,
+  DateTime? createdAt,
+  DateTime? updatedAt,
 }) {
-  return QAEntry(
+  final now = DateTime.now();
+  return ConversationThread(
     id: id,
-    question: question,
-    answer: answer,
-    timestamp: DateTime.now(),
-    askedBy: askedBy,
-    userPhotoURL: userPhotoURL,
+    title: title,
+    createdAt: createdAt ?? now,
+    updatedAt: updatedAt ?? now,
     userId: userId,
+    userName: userName,
+    userPhotoURL: userPhotoURL,
+    messageCount: messageCount,
+    lastMessagePreview: lastMessagePreview,
   );
 }
