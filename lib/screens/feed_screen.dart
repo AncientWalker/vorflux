@@ -4,6 +4,7 @@ import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/providers/feed_provider.dart';
 import 'package:vorflux/screens/detail_screen.dart';
 import 'package:vorflux/theme/app_theme.dart';
+import 'package:vorflux/widgets/bookmark_toggle_button.dart';
 import 'package:vorflux/widgets/search_bar.dart';
 import 'package:vorflux/widgets/user_avatar.dart';
 
@@ -268,13 +269,24 @@ class _FeedScreenState extends State<FeedScreen> {
                     '${thread.messageCount} messages',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
-                  Text(
-                    'Read full conversation →',
-                    style: TextStyle(
-                      color: AppColors.primary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  Row(
+                    children: [
+                      BookmarkToggleButton(
+                        thread: thread,
+                        iconSize: 18,
+                        showLabel: true,
+                        showSnackBar: false,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Read full conversation →',
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

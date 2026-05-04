@@ -6,6 +6,7 @@ import 'package:vorflux/firebase_options.dart';
 import 'package:vorflux/providers/auth_provider.dart';
 import 'package:vorflux/providers/history_provider.dart';
 import 'package:vorflux/providers/feed_provider.dart';
+import 'package:vorflux/providers/bookmark_provider.dart';
 import 'package:vorflux/screens/home_screen.dart';
 import 'package:vorflux/screens/login_screen.dart';
 import 'package:vorflux/services/firebase_config.dart';
@@ -40,6 +41,7 @@ class VorfluxApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => HistoryProvider()),
         ChangeNotifierProvider(create: (_) => FeedProvider()),
+        ChangeNotifierProvider(create: (_) => BookmarkProvider()),
       ],
       child: MaterialApp(
         title: 'Vorflux',

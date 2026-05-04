@@ -1,15 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:vorflux/providers/auth_provider.dart';
+import 'package:vorflux/providers/bookmark_provider.dart';
 import 'package:vorflux/providers/feed_provider.dart';
 import 'package:vorflux/screens/feed_screen.dart';
+import 'package:vorflux/services/firebase_config.dart';
 
 import '../helpers/test_factories.dart';
 
-Widget _buildTestApp(FeedProvider provider) {
+Widget _buildTestApp(FeedProvider feedProvider) {
+  FirebaseConfig.setAvailable(false);
   return MaterialApp(
-    home: ChangeNotifierProvider<FeedProvider>.value(
-      value: provider,
+    home: MultiProvider(
+      providers: [
+        ChangeNotifierProvider<FeedProvider>.value(value: feedProvider),
+        ChangeNotifierProvider<BookmarkProvider>(create: (_) => BookmarkProvider()),
+        ChangeNotifierProvider<AuthProvider>(create: (_) => AuthProvider()),
+      ],
       child: const Scaffold(body: FeedScreen()),
     ),
   );
@@ -20,9 +28,24 @@ void main() {
     late FeedProvider provider;
 
     final testEntries = [
-      makeThread(id: '1', title: 'What does Islam say about fasting?', lastMessagePreview: 'Fasting in Ramadan is one of the five pillars.', userName: 'Ahmed'),
-      makeThread(id: '2', title: 'How to be patient?', lastMessagePreview: 'Patience (sabr) is a virtue praised in the Quran.', userName: 'Fatima'),
-      makeThread(id: '3', title: 'What is zakat?', lastMessagePreview: 'Zakat is obligatory charity.', userName: 'Omar'),
+      makeThread(
+        id: '1',
+        title: 'What does Islam say about fasting?',
+        lastMessagePreview: 'Fasting in Ramadan is one of the five pillars.',
+        userName: 'Ahmed',
+      ),
+      makeThread(
+        id: '2',
+        title: 'How to be patient?',
+        lastMessagePreview: 'Patience (sabr) is a virtue praised in the Quran.',
+        userName: 'Fatima',
+      ),
+      makeThread(
+        id: '3',
+        title: 'What is zakat?',
+        lastMessagePreview: 'Zakat is obligatory charity.',
+        userName: 'Omar',
+      ),
     ];
 
     setUp(() {
