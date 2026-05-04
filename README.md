@@ -36,7 +36,7 @@ An Islamic Q&A mobile app powered by AI that provides answers exclusively from t
 
 ## Setup
 
-See [FIREBASE_SETUP.md](FIREBASE_SETUP.md) for complete Firebase configuration instructions.
+**Firebase is currently configured for Android only** (package `com.ask.quran`, project `ask-quran-ad35f`). Other platforms automatically fall back to offline/demo mode. See [FIREBASE_SETUP.md](FIREBASE_SETUP.md) for Firebase Console prerequisites and adding new platforms.
 
 ### Quick Start
 
@@ -53,7 +53,7 @@ See [FIREBASE_SETUP.md](FIREBASE_SETUP.md) for complete Firebase configuration i
    # Edit .env and add your OpenAI API key
    ```
 
-3. Set up Firebase (see FIREBASE_SETUP.md)
+3. Set up Firebase (see [FIREBASE_SETUP.md](FIREBASE_SETUP.md) for Android prerequisites)
 
 4. Run the app:
    ```bash

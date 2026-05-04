@@ -1,34 +1,33 @@
 {
   "project_info": {
-    "project_number": "000000000000",
-    "firebase_url": "https://vorflux-placeholder.firebaseio.com",
-    "project_id": "vorflux-placeholder",
-    "storage_bucket": "vorflux-placeholder.appspot.com"
+    "project_number": "972574497061",
+    "project_id": "ask-quran-ad35f",
+    "storage_bucket": "ask-quran-ad35f.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+        "mobilesdk_app_id": "1:972574497061:android:9bd7563fb1398d6eb022cc",
         "android_client_info": {
-          "package_name": "com.vorflux.vorflux"
+          "package_name": "com.ask.quran"
         }
       },
       "oauth_client": [
         {
-          "client_id": "000000000000-placeholder.apps.googleusercontent.com",
+          "client_id": "972574497061-ktenkk3iu3mhc8vqbhlimjhcl0ptj2eh.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyPlaceholderKeyForBuildOnly000000"
+          "current_key": "AIzaSyB-XLsJvNLfwHKrlDDq165nZvVWXrgPh3E"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "000000000000-placeholder.apps.googleusercontent.com",
+              "client_id": "972574497061-ktenkk3iu3mhc8vqbhlimjhcl0ptj2eh.apps.googleusercontent.com",
               "client_type": 3
             }
           ]
