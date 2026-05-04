@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:vorflux/models/chat_message.dart';
 import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/utils/text_utils.dart';
@@ -87,11 +88,23 @@ class FirestoreService {
   static Future<void> deleteThread(String threadId) async {
     final threadRef = _firestore.collection(_threadsCollection).doc(threadId);
     final messagesSnapshot = await threadRef.collection(_messagesSubcollection).get();
+    final threadSnapshot = await threadRef.get();
     final batch = _firestore.batch();
     for (final doc in messagesSnapshot.docs) {
       batch.delete(doc.reference);
     }
     batch.delete(threadRef);
+
+    final ownerId = threadSnapshot.data()?['userId'] as String?;
+    if (ownerId != null && ownerId.isNotEmpty) {
+      final bookmarkRef = _firestore
+          .collection('users')
+          .doc(ownerId)
+          .collection('bookmarks')
+          .doc(threadId);
+      batch.delete(bookmarkRef);
+    }
+
     await batch.commit();
   }
 
@@ -100,9 +113,7 @@ class FirestoreService {
         .collection(_threadsCollection)
         .where('userId', isEqualTo: userId)
         .get();
-    for (final threadDoc in threadsSnapshot.docs) {
-      await deleteThread(threadDoc.id);
-    }
+    await Future.wait(threadsSnapshot.docs.map((threadDoc) => deleteThread(threadDoc.id)));
   }
 
   static Future<void> migrateLegacyQuestions(String userId) async {
@@ -163,7 +174,15 @@ class FirestoreService {
         .collection('bookmarks')
         .doc(thread.id)
         .set({
-      ...thread.copyWith(messages: const []).toMap(),
+      'id': thread.id,
+      'title': thread.title,
+      'createdAt': Timestamp.fromDate(thread.createdAt),
+      'updatedAt': Timestamp.fromDate(thread.updatedAt),
+      'userId': thread.userId,
+      'userName': thread.userName,
+      'userPhotoURL': thread.userPhotoURL,
+      'messageCount': thread.messageCount,
+      'lastMessagePreview': thread.lastMessagePreview,
       'bookmarkedAt': FieldValue.serverTimestamp(),
     });
   }
@@ -193,19 +212,28 @@ class FirestoreService {
 
   static ConversationThread _docToThread(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() as Map<String, dynamic>;
-    final createdAt = data['createdAt'] as Timestamp?;
-    final updatedAt = data['updatedAt'] as Timestamp?;
     return ConversationThread(
       id: doc.id,
       title: data['title'] as String? ?? '',
-      createdAt: createdAt?.toDate() ?? DateTime.now(),
-      updatedAt: updatedAt?.toDate() ?? DateTime.now(),
+      createdAt: _parseFirestoreDate(data['createdAt']),
+      updatedAt: _parseFirestoreDate(data['updatedAt']),
       userId: data['userId'] as String?,
       userName: data['userName'] as String?,
       userPhotoURL: data['userPhotoURL'] as String?,
       messageCount: (data['messageCount'] as int?) ?? 0,
       lastMessagePreview: (data['lastMessagePreview'] as String?) ?? '',
     );
+  }
+
+  static DateTime _parseFirestoreDate(Object? value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is String) {
+      return DateTime.tryParse(value) ?? DateTime.now();
+    }
+    if (value != null) {
+      debugPrint('Unexpected Firestore date value: ${value.runtimeType}');
+    }
+    return DateTime.now();
   }
 
   static ChatMessage _docToMessage(

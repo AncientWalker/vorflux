@@ -4,7 +4,20 @@ import 'package:vorflux/models/chat_message.dart';
 import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/utils/text_utils.dart';
 
-Future<void> _createTablesAndIndex(DatabaseExecutor db) async {
+const _bookmarkColumns = [
+  'id',
+  'title',
+  'createdAt',
+  'updatedAt',
+  'userId',
+  'userName',
+  'userPhotoURL',
+  'messageCount',
+  'lastMessagePreview',
+  'bookmarkedAt',
+];
+
+Future<void> _createThreadsAndMessages(DatabaseExecutor db) async {
   await db.execute('''
     CREATE TABLE threads (
       id TEXT PRIMARY KEY,
@@ -18,6 +31,7 @@ Future<void> _createTablesAndIndex(DatabaseExecutor db) async {
       lastMessagePreview TEXT NOT NULL DEFAULT ''
     )
   ''');
+
   await db.execute('''
     CREATE TABLE messages (
       id TEXT PRIMARY KEY,
@@ -28,9 +42,8 @@ Future<void> _createTablesAndIndex(DatabaseExecutor db) async {
       FOREIGN KEY (threadId) REFERENCES threads(id) ON DELETE CASCADE
     )
   ''');
-  await db.execute(
-    'CREATE INDEX idx_messages_threadId ON messages(threadId)',
-  );
+
+  await db.execute('CREATE INDEX idx_messages_threadId ON messages(threadId)');
 }
 
 Future<void> _createBookmarksTable(DatabaseExecutor db) async {
@@ -50,9 +63,15 @@ Future<void> _createBookmarksTable(DatabaseExecutor db) async {
   ''');
 }
 
-Future<void> _runMigration(Database db, {String msgIdPrefix = 'test-msg'}) async {
+Future<List<String>> _getColumnNames(Database db, String tableName) async {
+  final rows = await db.rawQuery('PRAGMA table_info($tableName)');
+  return rows.map((row) => row['name']! as String).toList();
+}
+
+Future<void> _runV1ToV2Migration(Database db,
+    {String msgIdPrefix = 'test-msg'}) async {
   await db.transaction((txn) async {
-    await _createTablesAndIndex(txn);
+    await _createThreadsAndMessages(txn);
     final rows = await txn.query('history');
     var msgCounter = 0;
 
@@ -70,19 +89,16 @@ Future<void> _runMigration(Database db, {String msgIdPrefix = 'test-msg'}) async
       }
       final updatedAt = createdAt.add(const Duration(seconds: 1));
 
-      final title = truncateTitle(question);
-      final preview = truncatePreview(answer);
-
       await txn.insert('threads', {
         'id': oldId,
-        'title': title,
+        'title': truncateTitle(question),
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt.toIso8601String(),
         'userId': null,
         'userName': askedBy,
         'userPhotoURL': null,
         'messageCount': 2,
-        'lastMessagePreview': preview,
+        'lastMessagePreview': truncatePreview(answer),
       });
 
       await txn.insert('messages', {
@@ -106,48 +122,63 @@ Future<void> _runMigration(Database db, {String msgIdPrefix = 'test-msg'}) async
   });
 }
 
-Future<Database> _createV3Database() async {
+Future<Database> _openInMemoryDb({
+  required int version,
+  required Future<void> Function(Database db, int version) onCreate,
+  Future<void> Function(Database db, int oldVersion, int newVersion)? onUpgrade,
+}) async {
   sqfliteFfiInit();
-  final db = await databaseFactoryFfi.openDatabase(
+  return databaseFactoryFfi.openDatabase(
     inMemoryDatabasePath,
     options: OpenDatabaseOptions(
-      version: 1,
+      version: version,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
-      onCreate: (db, version) async {
-        await _createTablesAndIndex(db);
-        await _createBookmarksTable(db);
-      },
+      onCreate: onCreate,
+      onUpgrade: onUpgrade,
     ),
   );
-  return db;
 }
 
-Future<Database> _createV1Database() async {
-  sqfliteFfiInit();
-  final db = await databaseFactoryFfi.openDatabase(
-    inMemoryDatabasePath,
-    options: OpenDatabaseOptions(
-      version: 1,
-      onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE history (
-            id TEXT PRIMARY KEY,
-            question TEXT NOT NULL,
-            answer TEXT NOT NULL,
-            timestamp TEXT NOT NULL,
-            askedBy TEXT
-          )
-        ''');
-      },
-    ),
+Future<Database> _createV3Database() {
+  return _openInMemoryDb(
+    version: 3,
+    onCreate: (db, version) async {
+      await _createThreadsAndMessages(db);
+      await _createBookmarksTable(db);
+    },
   );
-  return db;
+}
+
+Future<Database> _createV1Database() {
+  return _openInMemoryDb(
+    version: 1,
+    onCreate: (db, version) async {
+      await db.execute('''
+        CREATE TABLE history (
+          id TEXT PRIMARY KEY,
+          question TEXT NOT NULL,
+          answer TEXT NOT NULL,
+          timestamp TEXT NOT NULL,
+          askedBy TEXT
+        )
+      ''');
+    },
+  );
+}
+
+Future<Database> _createV2Database() {
+  return _openInMemoryDb(
+    version: 2,
+    onCreate: (db, version) async {
+      await _createThreadsAndMessages(db);
+    },
+  );
 }
 
 void main() {
-  group('V3 Schema - threads table', () {
+  group('V3 schema', () {
     late Database db;
 
     setUp(() async {
@@ -156,6 +187,72 @@ void main() {
 
     tearDown(() async {
       await db.close();
+    });
+
+    test('fresh schema creates threads, messages, and bookmarks tables', () async {
+      final tables = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
+      );
+      final tableNames = tables.map((row) => row['name']).toSet();
+
+      expect(tableNames, contains('threads'));
+      expect(tableNames, contains('messages'));
+      expect(tableNames, contains('bookmarks'));
+    });
+
+    test('thread deletion can remove a matching bookmark without touching other data',
+        () async {
+      final now = DateTime(2025, 6, 15, 10, 0, 0);
+      await db.insert(
+        'threads',
+        ConversationThread(
+          id: 'thread-delete',
+          title: 'Delete me',
+          createdAt: now,
+          updatedAt: now,
+          messageCount: 1,
+          lastMessagePreview: 'Preview',
+        ).toMap(),
+      );
+      await db.insert('messages', {
+        'id': 'msg-delete',
+        'threadId': 'thread-delete',
+        'role': 'assistant',
+        'content': 'Preview',
+        'timestamp': now.toIso8601String(),
+      });
+      await db.insert('bookmarks', {
+        'id': 'thread-delete',
+        'title': 'Delete me',
+        'createdAt': now.toIso8601String(),
+        'updatedAt': now.toIso8601String(),
+        'userId': null,
+        'userName': null,
+        'userPhotoURL': null,
+        'messageCount': 1,
+        'lastMessagePreview': 'Preview',
+        'bookmarkedAt': now.toIso8601String(),
+      });
+
+      await db.delete('bookmarks', where: 'id = ?', whereArgs: ['thread-delete']);
+      await db.delete('threads', where: 'id = ?', whereArgs: ['thread-delete']);
+
+      expect(await db.query('bookmarks'), isEmpty);
+      expect(await db.query('threads'), isEmpty);
+      expect(await db.query('messages'), isEmpty);
+    });
+
+    test('bookmarks table columns match the thread snapshot schema', () async {
+      final columns = await _getColumnNames(db, 'bookmarks');
+      expect(columns, _bookmarkColumns);
+    });
+
+    test('messages table keeps the threadId index', () async {
+      final indexes = await db.rawQuery(
+        "PRAGMA index_list('messages')",
+      );
+      final indexNames = indexes.map((row) => row['name']).toSet();
+      expect(indexNames, contains('idx_messages_threadId'));
     });
 
     test('insert and retrieve a thread', () async {
@@ -172,8 +269,11 @@ void main() {
         lastMessagePreview: '',
       );
 
-      await db.insert('threads', thread.toMap(),
-          conflictAlgorithm: ConflictAlgorithm.replace);
+      await db.insert(
+        'threads',
+        thread.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
 
       final maps = await db.query('threads');
       expect(maps.length, 1);
@@ -185,7 +285,7 @@ void main() {
       expect(restored.messageCount, 0);
     });
 
-    test('getAllThreads returns threads ordered by updatedAt DESC', () async {
+    test('threads query can be ordered by updatedAt DESC', () async {
       final now = DateTime(2025, 6, 15, 10, 0, 0);
       final older = ConversationThread(
         id: 'thread-old',
@@ -209,13 +309,6 @@ void main() {
       expect(maps[1]['id'], 'thread-old');
     });
 
-    test('bookmarks table exists in fresh schema', () async {
-      final tables = await db.rawQuery(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='bookmarks'",
-      );
-      expect(tables.length, 1);
-    });
-
     test('insert and retrieve bookmark snapshot', () async {
       final now = DateTime(2025, 6, 15, 10, 0, 0);
       final thread = ConversationThread(
@@ -228,10 +321,14 @@ void main() {
         lastMessagePreview: 'Latest saved message',
       );
 
-      await db.insert('bookmarks', {
-        ...thread.toMap(),
-        'bookmarkedAt': now.toIso8601String(),
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await db.insert(
+        'bookmarks',
+        {
+          ...thread.toMap(),
+          'bookmarkedAt': now.toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
 
       final maps = await db.query('bookmarks');
       expect(maps.length, 1);
@@ -242,7 +339,7 @@ void main() {
     });
   });
 
-  group('V3 Schema - messages table', () {
+  group('Messages table', () {
     late Database db;
 
     setUp(() async {
@@ -255,12 +352,15 @@ void main() {
 
     test('insert and retrieve messages for a thread', () async {
       final now = DateTime(2025, 6, 15, 10, 0, 0);
-      await db.insert('threads', ConversationThread(
-        id: 'thread-1',
-        title: 'Test',
-        createdAt: now,
-        updatedAt: now,
-      ).toMap());
+      await db.insert(
+        'threads',
+        ConversationThread(
+          id: 'thread-1',
+          title: 'Test',
+          createdAt: now,
+          updatedAt: now,
+        ).toMap(),
+      );
 
       final msg1 = ChatMessage(
         id: 'msg-1',
@@ -277,15 +377,23 @@ void main() {
         timestamp: now.add(const Duration(seconds: 1)),
       );
 
-      await db.insert('messages', msg1.toMap(),
-          conflictAlgorithm: ConflictAlgorithm.replace);
-      await db.insert('messages', msg2.toMap(),
-          conflictAlgorithm: ConflictAlgorithm.replace);
+      await db.insert(
+        'messages',
+        msg1.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      await db.insert(
+        'messages',
+        msg2.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
 
-      final maps = await db.query('messages',
-          where: 'threadId = ?',
-          whereArgs: ['thread-1'],
-          orderBy: 'timestamp ASC');
+      final maps = await db.query(
+        'messages',
+        where: 'threadId = ?',
+        whereArgs: ['thread-1'],
+        orderBy: 'timestamp ASC',
+      );
       expect(maps.length, 2);
 
       final messages = maps.map((m) => ChatMessage.fromMap(m)).toList();
@@ -296,18 +404,67 @@ void main() {
     });
   });
 
-  group('V1 to V2 migration logic', () {
-    late Database db;
+  group('Upgrade paths', () {
+    test('v2 to v3 upgrade creates bookmarks and preserves existing thread data',
+        () async {
+      final db = await _createV2Database();
+      final now = DateTime(2025, 6, 15, 10, 0, 0);
 
-    setUp(() async {
-      db = await _createV1Database();
-    });
+      await db.insert(
+        'threads',
+        ConversationThread(
+          id: 'thread-existing',
+          title: 'Existing Thread',
+          createdAt: now,
+          updatedAt: now,
+          userName: 'Existing User',
+          messageCount: 1,
+          lastMessagePreview: 'Existing preview',
+        ).toMap(),
+      );
+      await db.insert('messages', {
+        'id': 'msg-existing',
+        'threadId': 'thread-existing',
+        'role': 'assistant',
+        'content': 'Existing content',
+        'timestamp': now.toIso8601String(),
+      });
 
-    tearDown(() async {
+      await _createBookmarksTable(db);
+      await db.insert('bookmarks', {
+        'id': 'thread-existing',
+        'title': 'Existing Thread',
+        'createdAt': now.toIso8601String(),
+        'updatedAt': now.toIso8601String(),
+        'userId': null,
+        'userName': 'Existing User',
+        'userPhotoURL': null,
+        'messageCount': 1,
+        'lastMessagePreview': 'Existing preview',
+        'bookmarkedAt': now.toIso8601String(),
+      });
+
+      final bookmarkColumns = await _getColumnNames(db, 'bookmarks');
+      expect(bookmarkColumns, _bookmarkColumns);
+
+      final threadRows = await db.query('threads');
+      final messageRows = await db.query('messages');
+      final bookmarkRows = await db.query('bookmarks');
+      expect(threadRows.single['id'], 'thread-existing');
+      expect(messageRows.single['threadId'], 'thread-existing');
+      expect(bookmarkRows.single['id'], 'thread-existing');
+
+      await db.delete('bookmarks', where: 'id = ?', whereArgs: ['thread-existing']);
+      expect(await db.query('bookmarks'), isEmpty);
+      expect(await db.query('threads'), isNotEmpty);
+      expect(await db.query('messages'), isNotEmpty);
+
       await db.close();
     });
 
-    test('migrates single history row to thread + 2 messages', () async {
+    test('v1 to v2 migration converts history rows into thread/message records',
+        () async {
+      final db = await _createV1Database();
       final ts = DateTime(2025, 6, 15, 10, 0, 0);
       await db.insert('history', {
         'id': 'old-1',
@@ -317,7 +474,7 @@ void main() {
         'askedBy': 'TestUser',
       });
 
-      await _runMigration(db);
+      await _runV1ToV2Migration(db);
       await _createBookmarksTable(db);
 
       final threads = await db.query('threads');
@@ -338,11 +495,18 @@ void main() {
       expect(messages[1]['content'], 'Islam is a monotheistic religion.');
 
       final tables = await db.rawQuery(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name='history'");
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='history'",
+      );
       expect(tables, isEmpty);
+
+      final bookmarkColumns = await _getColumnNames(db, 'bookmarks');
+      expect(bookmarkColumns, _bookmarkColumns);
+
+      await db.close();
     });
 
     test('migration truncates long question to 100 chars for title', () async {
+      final db = await _createV1Database();
       final longQuestion = 'A' * 200;
       final ts = DateTime(2025, 6, 15, 10, 0, 0);
       await db.insert('history', {
@@ -353,14 +517,16 @@ void main() {
         'askedBy': null,
       });
 
-      await _runMigration(db);
+      await _runV1ToV2Migration(db);
 
       final threads = await db.query('threads');
       expect(threads.first['title'], 'A' * 100);
+      await db.close();
     });
 
     test('migration truncates long answer to 120 chars + ellipsis for preview',
         () async {
+      final db = await _createV1Database();
       final longAnswer = 'B' * 200;
       final ts = DateTime(2025, 6, 15, 10, 0, 0);
       await db.insert('history', {
@@ -371,16 +537,18 @@ void main() {
         'askedBy': null,
       });
 
-      await _runMigration(db);
+      await _runV1ToV2Migration(db);
 
       final threads = await db.query('threads');
       final preview = threads.first['lastMessagePreview'] as String;
       expect(preview.length, 123);
-      expect(preview.endsWith('...'), true);
-      expect(preview.startsWith('B' * 120), true);
+      expect(preview.endsWith('...'), isTrue);
+      expect(preview.startsWith('B' * 120), isTrue);
+      await db.close();
     });
 
     test('migration handles malformed timestamp defensively', () async {
+      final db = await _createV1Database();
       await db.insert('history', {
         'id': 'old-bad-ts',
         'question': 'Question',
@@ -389,7 +557,7 @@ void main() {
         'askedBy': null,
       });
 
-      await _runMigration(db);
+      await _runV1ToV2Migration(db);
 
       final threads = await db.query('threads');
       expect(threads.length, 1);
@@ -397,6 +565,7 @@ void main() {
         () => DateTime.parse(threads.first['createdAt'] as String),
         returnsNormally,
       );
+      await db.close();
     });
   });
 }

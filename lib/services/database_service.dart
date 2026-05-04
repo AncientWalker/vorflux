@@ -202,11 +202,13 @@ class DatabaseService {
 
   static Future<void> deleteThread(String id) async {
     final db = await database;
+    await db.delete(_bookmarksTable, where: 'id = ?', whereArgs: [id]);
     await db.delete('threads', where: 'id = ?', whereArgs: [id]);
   }
 
   static Future<void> clearAllThreads() async {
     final db = await database;
+    await db.delete(_bookmarksTable);
     await db.delete('messages');
     await db.delete('threads');
   }

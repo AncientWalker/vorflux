@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:vorflux/models/qa_entry.dart';
-import 'package:vorflux/providers/bookmark_provider.dart';
+import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/providers/auth_provider.dart';
+import 'package:vorflux/providers/bookmark_provider.dart';
 import 'package:vorflux/services/firebase_config.dart';
 import 'package:vorflux/widgets/bookmark_toggle_button.dart';
 
@@ -23,14 +23,17 @@ Widget buildTestWidget({
   );
 }
 
-QAEntry makeEntry({String id = 'entry-1'}) {
-  return QAEntry(
+ConversationThread makeThread({String id = 'thread-1'}) {
+  final now = DateTime.now();
+  return ConversationThread(
     id: id,
-    question: 'What is Taqwa?',
-    answer: 'Taqwa means God-consciousness.',
-    timestamp: DateTime.now(),
-    askedBy: 'TestUser',
+    title: 'What is Taqwa?',
+    createdAt: now,
+    updatedAt: now,
+    userName: 'TestUser',
     userId: 'demo-user-001',
+    messageCount: 2,
+    lastMessagePreview: 'Taqwa means God-consciousness.',
   );
 }
 
@@ -38,11 +41,11 @@ void main() {
   group('BookmarkToggleButton', () {
     testWidgets('shows outline icon when not bookmarked', (tester) async {
       final provider = BookmarkProvider();
-      final entry = makeEntry();
+      final thread = makeThread();
 
       await tester.pumpWidget(buildTestWidget(
         bookmarkProvider: provider,
-        child: BookmarkToggleButton(entry: entry),
+        child: BookmarkToggleButton(thread: thread),
       ));
       await tester.pumpAndSettle();
 
@@ -52,11 +55,11 @@ void main() {
 
     testWidgets('shows label when showLabel is true', (tester) async {
       final provider = BookmarkProvider();
-      final entry = makeEntry();
+      final thread = makeThread();
 
       await tester.pumpWidget(buildTestWidget(
         bookmarkProvider: provider,
-        child: BookmarkToggleButton(entry: entry, showLabel: true),
+        child: BookmarkToggleButton(thread: thread, showLabel: true),
       ));
       await tester.pumpAndSettle();
 
@@ -65,11 +68,11 @@ void main() {
 
     testWidgets('does not show label by default', (tester) async {
       final provider = BookmarkProvider();
-      final entry = makeEntry();
+      final thread = makeThread();
 
       await tester.pumpWidget(buildTestWidget(
         bookmarkProvider: provider,
-        child: BookmarkToggleButton(entry: entry),
+        child: BookmarkToggleButton(thread: thread),
       ));
       await tester.pumpAndSettle();
 
@@ -79,11 +82,11 @@ void main() {
 
     testWidgets('respects custom iconSize', (tester) async {
       final provider = BookmarkProvider();
-      final entry = makeEntry();
+      final thread = makeThread();
 
       await tester.pumpWidget(buildTestWidget(
         bookmarkProvider: provider,
-        child: BookmarkToggleButton(entry: entry, iconSize: 18),
+        child: BookmarkToggleButton(thread: thread, iconSize: 18),
       ));
       await tester.pumpAndSettle();
 
