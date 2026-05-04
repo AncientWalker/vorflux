@@ -1,29 +1,46 @@
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:vorflux/models/conversation_thread.dart';
+import 'package:vorflux/providers/searchable_entries_mixin.dart';
+import 'package:vorflux/services/database_service.dart';
 import 'package:vorflux/services/firebase_config.dart';
 import 'package:vorflux/services/firestore_service.dart';
-import 'package:vorflux/services/database_service.dart';
 
-class FeedProvider extends ChangeNotifier {
+class FeedProvider extends ChangeNotifier with SearchableEntriesMixin {
   List<ConversationThread> _threads = [];
   bool _isLoading = false;
   bool _hasError = false;
   StreamSubscription? _subscription;
 
   List<ConversationThread> get threads => _threads;
+
+  @override
+  List<ConversationThread> get entries => _threads;
+
   bool get isLoading => _isLoading;
   bool get hasError => _hasError;
   bool get isEmpty => _threads.isEmpty;
 
+  @override
+  @visibleForTesting
+  set entriesForTesting(List<ConversationThread> entries) {
+    _threads = entries;
+  }
+
+  @override
+  List<String> searchableFields(ConversationThread entry) => [
+        entry.title,
+        entry.lastMessagePreview,
+        entry.userName ?? '',
+      ];
+
   void listenToFeed() {
     if (!FirebaseConfig.isAvailable) {
-      // Defer to avoid notifyListeners() during build phase
-      Future.microtask(() => _loadFromLocalDb());
+      Future.microtask(_loadFromLocalDb);
       return;
     }
 
-    // Defer to avoid notifyListeners() during build phase
     Future.microtask(() {
       _subscription?.cancel();
       _isLoading = true;
@@ -64,16 +81,16 @@ class FeedProvider extends ChangeNotifier {
     }
   }
 
-  /// Fetches a full thread (with messages) suitable for the detail screen.
   Future<ConversationThread> getFullThread(String threadId) async {
     final threadMeta = _threads.firstWhere((t) => t.id == threadId);
+
     if (FirebaseConfig.isAvailable) {
       final messages = await FirestoreService.getThreadMessages(threadId);
       return threadMeta.copyWith(messages: messages);
-    } else {
-      final fullThread = await DatabaseService.getThread(threadId);
-      return fullThread ?? threadMeta;
     }
+
+    final fullThread = await DatabaseService.getThread(threadId);
+    return fullThread ?? threadMeta;
   }
 
   Future<void> refreshFeed() async {
@@ -81,6 +98,7 @@ class FeedProvider extends ChangeNotifier {
       await _loadFromLocalDb();
       return;
     }
+
     listenToFeed();
   }
 
@@ -88,6 +106,7 @@ class FeedProvider extends ChangeNotifier {
     _subscription?.cancel();
     _subscription = null;
     _threads = [];
+    clearSearch();
     notifyListeners();
   }
 

@@ -1,8 +1,8 @@
-import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
-import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/models/chat_message.dart';
+import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/utils/text_utils.dart';
 
 class DatabaseService {
@@ -17,7 +17,8 @@ class DatabaseService {
   static Future<Database> _initDatabase() async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, 'vorflux.db');
-    return await openDatabase(
+
+    return openDatabase(
       path,
       version: 2,
       onConfigure: (db) async {
@@ -38,7 +39,6 @@ class DatabaseService {
     await _createTablesAndIndex(db);
   }
 
-  /// Creates the V2 tables and index. Shared between fresh creation and migration.
   static Future<void> _createTablesAndIndex(DatabaseExecutor db) async {
     await db.execute('''
       CREATE TABLE threads (
@@ -66,7 +66,8 @@ class DatabaseService {
     ''');
 
     await db.execute(
-        'CREATE INDEX idx_messages_threadId ON messages(threadId)');
+      'CREATE INDEX idx_messages_threadId ON messages(threadId)',
+    );
   }
 
   static Future<void> _migrateV1ToV2(Database db) async {
@@ -74,7 +75,6 @@ class DatabaseService {
 
     await db.transaction((txn) async {
       await _createTablesAndIndex(txn);
-
       final rows = await txn.query('history');
 
       for (final row in rows) {
@@ -93,19 +93,16 @@ class DatabaseService {
 
         final updatedAt = createdAt.add(const Duration(seconds: 1));
 
-        final title = truncateTitle(question);
-        final preview = truncatePreview(answer);
-
         await txn.insert('threads', {
           'id': oldId,
-          'title': title,
+          'title': truncateTitle(question),
           'createdAt': createdAt.toIso8601String(),
           'updatedAt': updatedAt.toIso8601String(),
           'userId': null,
           'userName': askedBy,
           'userPhotoURL': null,
           'messageCount': 2,
-          'lastMessagePreview': preview,
+          'lastMessagePreview': truncatePreview(answer),
         });
 
         await txn.insert('messages', {
@@ -131,8 +128,11 @@ class DatabaseService {
 
   static Future<void> insertThread(ConversationThread thread) async {
     final db = await database;
-    await db.insert('threads', thread.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.insert(
+      'threads',
+      thread.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   static Future<void> updateThreadMetadata({
@@ -162,13 +162,21 @@ class DatabaseService {
 
   static Future<ConversationThread?> getThread(String id) async {
     final db = await database;
-    final threadMaps =
-        await db.query('threads', where: 'id = ?', whereArgs: [id]);
+    final threadMaps = await db.query(
+      'threads',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
     if (threadMaps.isEmpty) return null;
+
     final thread = ConversationThread.fromMap(threadMaps.first);
-    final messageMaps = await db.query('messages',
-        where: 'threadId = ?', whereArgs: [id], orderBy: 'timestamp ASC');
-    final messages = messageMaps.map((m) => ChatMessage.fromMap(m)).toList();
+    final messageMaps = await db.query(
+      'messages',
+      where: 'threadId = ?',
+      whereArgs: [id],
+      orderBy: 'timestamp ASC',
+    );
+    final messages = messageMaps.map(ChatMessage.fromMap).toList();
     return thread.copyWith(messages: messages);
   }
 
@@ -185,17 +193,21 @@ class DatabaseService {
 
   static Future<void> insertMessage(ChatMessage message) async {
     final db = await database;
-    await db.insert('messages', message.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.insert(
+      'messages',
+      message.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
-  static Future<List<ChatMessage>> getMessagesForThread(
-      String threadId) async {
+  static Future<List<ChatMessage>> getMessagesForThread(String threadId) async {
     final db = await database;
-    final maps = await db.query('messages',
-        where: 'threadId = ?',
-        whereArgs: [threadId],
-        orderBy: 'timestamp ASC');
-    return maps.map((m) => ChatMessage.fromMap(m)).toList();
+    final maps = await db.query(
+      'messages',
+      where: 'threadId = ?',
+      whereArgs: [threadId],
+      orderBy: 'timestamp ASC',
+    );
+    return maps.map(ChatMessage.fromMap).toList();
   }
 }

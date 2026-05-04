@@ -1,15 +1,17 @@
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
-import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/models/chat_message.dart';
+import 'package:vorflux/models/conversation_thread.dart';
+import 'package:vorflux/providers/searchable_entries_mixin.dart';
+import 'package:vorflux/services/database_service.dart';
 import 'package:vorflux/services/firebase_config.dart';
 import 'package:vorflux/services/firestore_service.dart';
-import 'package:vorflux/services/database_service.dart';
 import 'package:vorflux/services/openai_service.dart';
 import 'package:vorflux/utils/text_utils.dart';
 
-class HistoryProvider extends ChangeNotifier {
+class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
   List<ConversationThread> _threads = [];
   ConversationThread? _activeThread;
   bool _isLoading = false;
@@ -21,9 +23,25 @@ class HistoryProvider extends ChangeNotifier {
 
   List<ConversationThread> get threads => _threads;
   ConversationThread? get activeThread => _activeThread;
+
+  @override
+  List<ConversationThread> get entries => _threads;
+
   bool get isLoading => _isLoading;
   bool get isSending => _isSending;
   bool get isEmpty => _threads.isEmpty;
+
+  @override
+  @visibleForTesting
+  set entriesForTesting(List<ConversationThread> entries) {
+    _threads = entries;
+  }
+
+  @override
+  List<String> searchableFields(ConversationThread entry) => [
+        entry.title,
+        entry.lastMessagePreview,
+      ];
 
   void listenToUserThreads({
     required String userId,
@@ -35,12 +53,10 @@ class HistoryProvider extends ChangeNotifier {
     _currentUserPhotoURL = userPhotoURL;
 
     if (!FirebaseConfig.isAvailable) {
-      // Defer to avoid notifyListeners() during build phase
-      Future.microtask(() => _loadFromLocalDb());
+      Future.microtask(_loadFromLocalDb);
       return;
     }
 
-    // Trigger one-time legacy migration, then listen
     Future.microtask(() {
       FirestoreService.migrateLegacyQuestions(userId).then((_) {
         _startFirestoreListener(userId);
@@ -55,6 +71,7 @@ class HistoryProvider extends ChangeNotifier {
     _subscription?.cancel();
     _isLoading = true;
     notifyListeners();
+
     _subscription = FirestoreService.getUserThreads(userId).listen(
       (threads) {
         _threads = threads;
@@ -72,6 +89,7 @@ class HistoryProvider extends ChangeNotifier {
   Future<void> _loadFromLocalDb() async {
     _isLoading = true;
     notifyListeners();
+
     try {
       _threads = await DatabaseService.getAllThreads();
       _isLoading = false;
@@ -89,10 +107,10 @@ class HistoryProvider extends ChangeNotifier {
   }
 
   Future<void> openThread(String threadId) async {
-    // Clear active thread immediately so the UI doesn't show stale content
     _activeThread = null;
     _isLoading = true;
     notifyListeners();
+
     try {
       if (!FirebaseConfig.isAvailable) {
         _activeThread = await DatabaseService.getThread(threadId);
@@ -101,6 +119,7 @@ class HistoryProvider extends ChangeNotifier {
         final messages = await FirestoreService.getThreadMessages(threadId);
         _activeThread = threadMeta.copyWith(messages: messages);
       }
+
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -117,7 +136,6 @@ class HistoryProvider extends ChangeNotifier {
     try {
       final now = DateTime.now();
       final threadId = await _ensureThread(question, now);
-
       final conversationHistory = List<ChatMessage>.from(_activeThread!.messages);
 
       _showOptimisticUserMessage(threadId, question, now);
@@ -128,7 +146,6 @@ class HistoryProvider extends ChangeNotifier {
       );
 
       final answerTime = DateTime.now();
-
       final persistedMessages = await _persistMessages(
         threadId: threadId,
         question: question,
@@ -137,7 +154,6 @@ class HistoryProvider extends ChangeNotifier {
         answerTime: answerTime,
         conversationHistory: conversationHistory,
       );
-
       final preview = truncatePreview(answer);
 
       _updateLocalThreadList(
@@ -150,14 +166,13 @@ class HistoryProvider extends ChangeNotifier {
       _isSending = false;
       notifyListeners();
     } catch (e) {
-      _rollbackOnFailure();
+      await _rollbackOnFailure();
       _isSending = false;
       notifyListeners();
       rethrow;
     }
   }
 
-  /// Creates a new thread if none is active, or returns the existing thread ID.
   Future<String> _ensureThread(String question, DateTime now) async {
     if (_activeThread != null) return _activeThread!.id;
 
@@ -166,47 +181,58 @@ class HistoryProvider extends ChangeNotifier {
     if (!FirebaseConfig.isAvailable) {
       final threadId = const Uuid().v4();
       final newThread = ConversationThread(
-        id: threadId, title: title,
-        createdAt: now, updatedAt: now,
-        userId: _currentUserId, userName: _currentUserName,
+        id: threadId,
+        title: title,
+        createdAt: now,
+        updatedAt: now,
+        userId: _currentUserId,
+        userName: _currentUserName,
         userPhotoURL: _currentUserPhotoURL,
-        messages: const [], messageCount: 0, lastMessagePreview: '',
+        messages: const [],
+        messageCount: 0,
+        lastMessagePreview: '',
       );
       await DatabaseService.insertThread(newThread);
       _activeThread = newThread;
       return threadId;
-    } else {
-      final threadId = await FirestoreService.createThread(
-        userId: _currentUserId ?? '',
-        userName: _currentUserName,
-        userPhotoURL: _currentUserPhotoURL,
-        title: title,
-      );
-      _activeThread = ConversationThread(
-        id: threadId, title: title,
-        createdAt: now, updatedAt: now,
-        userId: _currentUserId, userName: _currentUserName,
-        userPhotoURL: _currentUserPhotoURL,
-        messages: const [], messageCount: 0, lastMessagePreview: '',
-      );
-      return threadId;
     }
+
+    final threadId = await FirestoreService.createThread(
+      userId: _currentUserId ?? '',
+      userName: _currentUserName,
+      userPhotoURL: _currentUserPhotoURL,
+      title: title,
+    );
+    _activeThread = ConversationThread(
+      id: threadId,
+      title: title,
+      createdAt: now,
+      updatedAt: now,
+      userId: _currentUserId,
+      userName: _currentUserName,
+      userPhotoURL: _currentUserPhotoURL,
+      messages: const [],
+      messageCount: 0,
+      lastMessagePreview: '',
+    );
+    return threadId;
   }
 
-  /// Adds a temporary user message to the active thread for immediate UI feedback.
   void _showOptimisticUserMessage(String threadId, String question, DateTime now) {
     final tempUserMessage = ChatMessage(
       id: 'temp-user-${now.millisecondsSinceEpoch}',
-      threadId: threadId, role: 'user',
-      content: question, timestamp: now,
+      threadId: threadId,
+      role: 'user',
+      content: question,
+      timestamp: now,
     );
+
     _activeThread = _activeThread!.copyWith(
       messages: [..._activeThread!.messages, tempUserMessage],
     );
     notifyListeners();
   }
 
-  /// Persists both user and assistant messages and returns the full persisted list.
   Future<List<ChatMessage>> _persistMessages({
     required String threadId,
     required String question,
@@ -216,12 +242,18 @@ class HistoryProvider extends ChangeNotifier {
     required List<ChatMessage> conversationHistory,
   }) async {
     final userMessage = ChatMessage(
-      id: const Uuid().v4(), threadId: threadId,
-      role: 'user', content: question, timestamp: questionTime,
+      id: const Uuid().v4(),
+      threadId: threadId,
+      role: 'user',
+      content: question,
+      timestamp: questionTime,
     );
     final assistantMessage = ChatMessage(
-      id: const Uuid().v4(), threadId: threadId,
-      role: 'assistant', content: answer, timestamp: answerTime,
+      id: const Uuid().v4(),
+      threadId: threadId,
+      role: 'assistant',
+      content: answer,
+      timestamp: answerTime,
     );
 
     final preview = truncatePreview(answer);
@@ -233,18 +265,27 @@ class HistoryProvider extends ChangeNotifier {
       await DatabaseService.insertMessage(userMessage);
       await DatabaseService.insertMessage(assistantMessage);
       await DatabaseService.updateThreadMetadata(
-        threadId: threadId, updatedAt: answerTime,
-        messageCount: persistedMessages.length, lastMessagePreview: preview,
+        threadId: threadId,
+        updatedAt: answerTime,
+        messageCount: persistedMessages.length,
+        lastMessagePreview: preview,
       );
     } else {
-      await FirestoreService.addMessage(threadId: threadId, role: 'user', content: question);
-      await FirestoreService.addMessage(threadId: threadId, role: 'assistant', content: answer);
+      await FirestoreService.addMessage(
+        threadId: threadId,
+        role: 'user',
+        content: question,
+      );
+      await FirestoreService.addMessage(
+        threadId: threadId,
+        role: 'assistant',
+        content: answer,
+      );
     }
 
     return persistedMessages;
   }
 
-  /// Updates the active thread and the _threads list with new data after a successful send.
   void _updateLocalThreadList({
     required String threadId,
     required List<ChatMessage> persistedMessages,
@@ -260,15 +301,16 @@ class HistoryProvider extends ChangeNotifier {
 
     final threadIndex = _threads.indexWhere((t) => t.id == threadId);
     final updatedThreadMeta = _activeThread!.copyWith(messages: const []);
+
     if (threadIndex >= 0) {
       _threads[threadIndex] = updatedThreadMeta;
     } else {
       _threads.insert(0, updatedThreadMeta);
     }
+
     _threads.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
   }
 
-  /// Removes the optimistic temp message on failure and cleans up empty threads.
   Future<void> _rollbackOnFailure() async {
     if (_activeThread != null && _activeThread!.messages.isNotEmpty) {
       final messages = List<ChatMessage>.from(_activeThread!.messages);
@@ -277,7 +319,7 @@ class HistoryProvider extends ChangeNotifier {
         _activeThread = _activeThread!.copyWith(messages: messages);
       }
     }
-    // If new thread with no persisted messages, clean up
+
     if (_activeThread != null && _activeThread!.messages.isEmpty) {
       try {
         if (!FirebaseConfig.isAvailable) {
@@ -291,11 +333,11 @@ class HistoryProvider extends ChangeNotifier {
   }
 
   Future<void> deleteThread(String id) async {
-    // Optimistically remove from local state first
     final removedThread = _threads.cast<ConversationThread?>().firstWhere(
-      (t) => t!.id == id,
-      orElse: () => null,
-    );
+          (t) => t!.id == id,
+          orElse: () => null,
+        );
+
     _threads.removeWhere((t) => t.id == id);
     if (_activeThread?.id == id) _activeThread = null;
     notifyListeners();
@@ -308,7 +350,6 @@ class HistoryProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Error deleting thread: $e');
-      // Roll back: restore the thread if deletion failed
       if (removedThread != null) {
         _threads.add(removedThread);
         _threads.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
@@ -326,7 +367,9 @@ class HistoryProvider extends ChangeNotifier {
       notifyListeners();
       return;
     }
+
     if (_currentUserId == null) return;
+
     try {
       await FirestoreService.deleteAllUserThreads(_currentUserId!);
       _activeThread = null;
@@ -343,6 +386,7 @@ class HistoryProvider extends ChangeNotifier {
     _currentUserId = null;
     _currentUserName = '';
     _currentUserPhotoURL = '';
+    clearSearch();
     notifyListeners();
   }
 

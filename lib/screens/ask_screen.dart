@@ -35,6 +35,7 @@ class _AskScreenState extends State<AskScreen> {
       _errorMessage = null;
       _lastFailedQuestion = null;
     });
+
     _questionController.clear();
     FocusScope.of(context).unfocus();
 
@@ -125,7 +126,10 @@ class _AskScreenState extends State<AskScreen> {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [AppColors.primary.withValues(alpha: 0.08), AppColors.gold.withValues(alpha: 0.06)],
+          colors: [
+            AppColors.primary.withValues(alpha: 0.08),
+            AppColors.gold.withValues(alpha: 0.06),
+          ],
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppColors.primary.withValues(alpha: 0.1)),
@@ -134,23 +138,45 @@ class _AskScreenState extends State<AskScreen> {
         children: [
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
-            child: Icon(Icons.menu_book_rounded, size: 40, color: AppColors.primary),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.menu_book_rounded,
+              size: 40,
+              color: AppColors.primary,
+            ),
           ),
           const SizedBox(height: 16),
-          Text(greeting,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: AppColors.primary),
-              textAlign: TextAlign.center),
+          Text(
+            greeting,
+            style: Theme.of(context)
+                .textTheme
+                .headlineSmall
+                ?.copyWith(color: AppColors.primary),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 8),
-          Text('Ask from the Quran & Hadith',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.primaryLight),
-              textAlign: TextAlign.center),
+          Text(
+            'Ask from the Quran & Hadith',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(color: AppColors.primaryLight),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 4),
-          Text('Get answers sourced exclusively from the Holy Quran and authentic Hadith collections with specific citations.',
-              style: Theme.of(context).textTheme.bodyMedium, textAlign: TextAlign.center),
+          Text(
+            'Get answers sourced exclusively from the Holy Quran and authentic Hadith collections with specific citations.',
+            style: Theme.of(context).textTheme.bodyMedium,
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 20),
           Wrap(
-            spacing: 8, runSpacing: 8, alignment: WrapAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
             children: [
               _buildSuggestionChip('What does Islam say about patience?'),
               _buildSuggestionChip('Importance of prayer in the Quran'),
@@ -164,11 +190,17 @@ class _AskScreenState extends State<AskScreen> {
 
   Widget _buildSuggestionChip(String text) {
     return ActionChip(
-      label: Text(text, style: TextStyle(fontSize: 12, color: AppColors.primary)),
+      label: Text(
+        text,
+        style: TextStyle(fontSize: 12, color: AppColors.primary),
+      ),
       backgroundColor: Colors.white,
       side: BorderSide(color: AppColors.primary.withValues(alpha: 0.3)),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      onPressed: () { _questionController.text = text; _askQuestion(); },
+      onPressed: () {
+        _questionController.text = text;
+        _askQuestion();
+      },
     );
   }
 
@@ -181,53 +213,97 @@ class _AskScreenState extends State<AskScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.error.withValues(alpha: 0.2)),
       ),
-      child: Row(children: [
-        Icon(Icons.error_outline, color: AppColors.error, size: 20),
-        const SizedBox(width: 8),
-        Expanded(child: Text(_errorMessage!, style: TextStyle(color: AppColors.error, fontSize: 13))),
-        if (_lastFailedQuestion != null)
-          IconButton(
-            icon: Icon(Icons.refresh, color: AppColors.error, size: 20),
-            onPressed: () {
-              _questionController.text = _lastFailedQuestion!;
-              _askQuestion();
-            },
+      child: Row(
+        children: [
+          Icon(Icons.error_outline, color: AppColors.error, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _errorMessage!,
+              style: TextStyle(color: AppColors.error, fontSize: 13),
+            ),
           ),
-      ]),
+          if (_lastFailedQuestion != null)
+            IconButton(
+              icon: Icon(Icons.refresh, color: AppColors.error, size: 20),
+              onPressed: () {
+                _questionController.text = _lastFailedQuestion!;
+                _askQuestion();
+              },
+            ),
+        ],
+      ),
     );
   }
 
   Widget _buildInputArea(bool disabled) {
     return Container(
-      padding: EdgeInsets.only(left: 16, right: 16, bottom: MediaQuery.of(context).padding.bottom + 8, top: 8),
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        bottom: MediaQuery.of(context).padding.bottom + 8,
+        top: 8,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -4))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, -4),
+          ),
+        ],
       ),
-      child: Row(children: [
-        Expanded(child: TextField(
-          controller: _questionController, maxLines: 3, minLines: 1,
-          textInputAction: TextInputAction.send, onSubmitted: (_) => _askQuestion(),
-          decoration: InputDecoration(
-            hintText: 'Ask a question about Islam...',
-            prefixIcon: Padding(padding: const EdgeInsets.only(left: 12, right: 8),
-              child: Icon(Icons.mosque_outlined, color: AppColors.primary.withValues(alpha: 0.5))),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _questionController,
+              maxLines: 3,
+              minLines: 1,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => _askQuestion(),
+              decoration: InputDecoration(
+                hintText: 'Ask a question about Islam...',
+                prefixIcon: Padding(
+                  padding: const EdgeInsets.only(left: 12, right: 8),
+                  child: Icon(
+                    Icons.mosque_outlined,
+                    color: AppColors.primary.withValues(alpha: 0.5),
+                  ),
+                ),
+              ),
+              enabled: !disabled,
+            ),
           ),
-          enabled: !disabled,
-        )),
-        const SizedBox(width: 8),
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(colors: disabled ? [Colors.grey, Colors.grey] : [AppColors.primary, AppColors.primaryLight]),
-            borderRadius: BorderRadius.circular(16),
+          const SizedBox(width: 8),
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: disabled
+                    ? [Colors.grey, Colors.grey]
+                    : [AppColors.primary, AppColors.primaryLight],
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: disabled ? null : _askQuestion,
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  child: Icon(
+                    disabled ? Icons.hourglass_top : Icons.send_rounded,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+              ),
+            ),
           ),
-          child: Material(color: Colors.transparent, child: InkWell(
-            borderRadius: BorderRadius.circular(16), onTap: disabled ? null : _askQuestion,
-            child: Container(padding: const EdgeInsets.all(14),
-              child: Icon(disabled ? Icons.hourglass_top : Icons.send_rounded, color: Colors.white, size: 24)),
-          )),
-        ),
-      ]),
+        ],
+      ),
     );
   }
 }

@@ -2,8 +2,35 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vorflux/models/chat_message.dart';
 import 'package:vorflux/models/conversation_thread.dart';
 import 'package:vorflux/services/openai_service.dart';
+import 'package:vorflux/utils/text_utils.dart';
 
 void main() {
+  group('formatRelativeTimestamp', () {
+    test('returns Just now for less than a minute', () {
+      final dateTime = DateTime.now().subtract(const Duration(seconds: 30));
+      expect(formatRelativeTimestamp(dateTime), 'Just now');
+    });
+
+    test('returns minutes for less than an hour', () {
+      final dateTime = DateTime.now().subtract(const Duration(minutes: 5));
+      expect(formatRelativeTimestamp(dateTime), '5m ago');
+    });
+
+    test('returns hours for less than a day', () {
+      final dateTime = DateTime.now().subtract(const Duration(hours: 3));
+      expect(formatRelativeTimestamp(dateTime), '3h ago');
+    });
+
+    test('returns days for less than a week', () {
+      final dateTime = DateTime.now().subtract(const Duration(days: 4));
+      expect(formatRelativeTimestamp(dateTime), '4d ago');
+    });
+
+    test('returns calendar date for a week or more', () {
+      expect(formatRelativeTimestamp(DateTime(2025, 1, 5)), '05/01/2025');
+    });
+  });
+
   group('ChatMessage', () {
     test('toMap()/fromMap() round-trip preserves all fields', () {
       final timestamp = DateTime(2025, 6, 15, 10, 30, 0);
@@ -39,7 +66,7 @@ void main() {
       expect(map['timestamp'], timestamp.toIso8601String());
     });
 
-    test('formattedTimestamp returns "Just now" for < 1 minute', () {
+    test('formattedTimestamp delegates to formatter for < 1 minute', () {
       final message = ChatMessage(
         id: 'msg-1',
         threadId: 'thread-1',
@@ -51,7 +78,7 @@ void main() {
       expect(message.formattedTimestamp, 'Just now');
     });
 
-    test('formattedTimestamp returns "Xm ago" for < 60 minutes', () {
+    test('formattedTimestamp delegates to formatter for < 60 minutes', () {
       final message = ChatMessage(
         id: 'msg-1',
         threadId: 'thread-1',
@@ -63,7 +90,7 @@ void main() {
       expect(message.formattedTimestamp, '5m ago');
     });
 
-    test('formattedTimestamp returns "Xh ago" for < 24 hours', () {
+    test('formattedTimestamp delegates to formatter for < 24 hours', () {
       final message = ChatMessage(
         id: 'msg-1',
         threadId: 'thread-1',
@@ -75,7 +102,7 @@ void main() {
       expect(message.formattedTimestamp, '3h ago');
     });
 
-    test('formattedTimestamp returns "Xd ago" for < 7 days', () {
+    test('formattedTimestamp delegates to formatter for < 7 days', () {
       final message = ChatMessage(
         id: 'msg-1',
         threadId: 'thread-1',
@@ -87,7 +114,7 @@ void main() {
       expect(message.formattedTimestamp, '4d ago');
     });
 
-    test('formattedTimestamp returns "DD/MM/YYYY" for >= 7 days', () {
+    test('formattedTimestamp delegates to formatter for >= 7 days', () {
       final message = ChatMessage(
         id: 'msg-1',
         threadId: 'thread-1',
@@ -180,7 +207,7 @@ void main() {
       expect(thread.formattedTimestamp, '10m ago');
     });
 
-    test('formattedTimestamp returns "Just now" for < 1 minute', () {
+    test('formattedTimestamp returns Just now for < 1 minute', () {
       final thread = ConversationThread(
         id: 'thread-1',
         title: 'Test',
@@ -191,7 +218,7 @@ void main() {
       expect(thread.formattedTimestamp, 'Just now');
     });
 
-    test('formattedTimestamp returns "DD/MM/YYYY" for >= 7 days', () {
+    test('formattedTimestamp returns DD/MM/YYYY for >= 7 days', () {
       final thread = ConversationThread(
         id: 'thread-1',
         title: 'Test',
@@ -283,7 +310,7 @@ void main() {
         conversationHistory: history,
       );
 
-      expect(result.length, 7); // system + 5 history + user
+      expect(result.length, 7);
       expect(result[0]['role'], 'system');
       expect(result[1]['role'], 'user');
       expect(result[1]['content'], 'Message 0');
@@ -316,14 +343,10 @@ void main() {
         conversationHistory: history,
       );
 
-      // system + 20 recent history + user = 22
       expect(result.length, 22);
       expect(result[0]['role'], 'system');
-      // First history message should be Message 5 (index 25 - 20 = 5)
       expect(result[1]['content'], 'Message 5');
-      // Last history message should be Message 24
       expect(result[20]['content'], 'Message 24');
-      // Final message is the new user question
       expect(result[21]['role'], 'user');
       expect(result[21]['content'], 'Final question?');
     });
