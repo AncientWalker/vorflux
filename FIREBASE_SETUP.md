@@ -60,8 +60,8 @@ Create a composite index for the `questions` collection:
 ## Step 4: Register Android App
 
 1. In Firebase Console, click the **Android** icon to add an Android app
-2. Package name: `com.vorflux.vorflux`
-3. App nickname: `Vorflux Android`
+2. Package name: `com.ask.quran`
+3. App nickname: `Ask Quran Android`
 4. Get SHA-1 fingerprint: `cd android && ./gradlew signingReport`
 5. Download `google-services.json` and replace `android/app/google-services.json`
 
