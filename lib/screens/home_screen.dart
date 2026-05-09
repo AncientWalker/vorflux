@@ -34,7 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
       userName: authProvider.displayName,
       userPhotoURL: authProvider.photoURL,
     );
-    context.read<FeedProvider>().listenToFeed();
+    context.read<FeedProvider>().listenToFeed(userId: authProvider.uid);
   }
 
   @override
@@ -129,14 +129,37 @@ class _HomeScreenState extends State<HomeScreen> {
         decoration: BoxDecoration(
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 10, offset: const Offset(0, -2))],
         ),
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (index) => setState(() => _currentIndex = index),
-          items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.question_answer_outlined), activeIcon: Icon(Icons.question_answer), label: 'Ask'),
-            BottomNavigationBarItem(icon: Icon(Icons.history_outlined), activeIcon: Icon(Icons.history), label: 'History'),
-            BottomNavigationBarItem(icon: Icon(Icons.people_outlined), activeIcon: Icon(Icons.people), label: 'Feed'),
-          ],
+        child: Consumer<FeedProvider>(
+          builder: (context, feedProvider, _) {
+            final unread = feedProvider.unreadCount;
+            final badgeLabel = unread > 9 ? '9+' : '$unread';
+            return BottomNavigationBar(
+              currentIndex: _currentIndex,
+              onTap: (index) {
+                setState(() => _currentIndex = index);
+                if (index == 2) {
+                  feedProvider.markFeedAsSeen();
+                }
+              },
+              items: [
+                const BottomNavigationBarItem(icon: Icon(Icons.question_answer_outlined), activeIcon: Icon(Icons.question_answer), label: 'Ask'),
+                const BottomNavigationBarItem(icon: Icon(Icons.history_outlined), activeIcon: Icon(Icons.history), label: 'History'),
+                BottomNavigationBarItem(
+                  icon: Badge(
+                    isLabelVisible: unread > 0,
+                    label: Text(badgeLabel, style: const TextStyle(fontSize: 10)),
+                    child: const Icon(Icons.people_outlined),
+                  ),
+                  activeIcon: Badge(
+                    isLabelVisible: unread > 0,
+                    label: Text(badgeLabel, style: const TextStyle(fontSize: 10)),
+                    child: const Icon(Icons.people),
+                  ),
+                  label: 'Feed',
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
