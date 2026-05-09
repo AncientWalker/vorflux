@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Conversation threads
+    match /threads/{threadId} {
+      // Any signed-in user can read all threads (Feed tab)
+      allow read: if request.auth != null;
+
+      // Users can only create threads tagged with their own uid
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid;
+
+      // Users can only update their own threads
+      allow update: if request.auth != null
+                    && resource.data.userId == request.auth.uid;
+
+      // Users can only delete their own threads
+      allow delete: if request.auth != null
+                    && resource.data.userId == request.auth.uid;
+
+      // Messages subcollection inside a thread
+      match /messages/{messageId} {
+        // Any signed-in user can read messages (needed for Feed detail view)
+        allow read: if request.auth != null;
+
+        // Only the thread owner can add messages
+        allow create: if request.auth != null
+                      && get(/databases/$(database)/documents/threads/$(threadId)).data.userId == request.auth.uid;
+
+        // Messages are immutable — no update or delete
+      }
+    }
+
+    // Legacy questions collection (for migration)
+    match /questions/{questionId} {
+      allow read: if request.auth != null;
+
+      // Allow the owner to update their own legacy docs (migration flag)
+      allow update: if request.auth != null
+                    && resource.data.userId == request.auth.uid;
+    }
+  }
+}
