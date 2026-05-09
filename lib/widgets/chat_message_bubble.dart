@@ -3,14 +3,33 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:vorflux/models/chat_message.dart';
 import 'package:vorflux/theme/app_theme.dart';
 
-class ChatMessageBubble extends StatelessWidget {
+class ChatMessageBubble extends StatefulWidget {
   final ChatMessage message;
-  final void Function(String messageId, String? feedback)? onFeedback;
+  final Future<void> Function(String messageId, String? feedback)? onFeedback;
   const ChatMessageBubble({super.key, required this.message, this.onFeedback});
 
   @override
+  State<ChatMessageBubble> createState() => _ChatMessageBubbleState();
+}
+
+class _ChatMessageBubbleState extends State<ChatMessageBubble> {
+  bool _isSaving = false;
+
+  Future<void> _onFeedbackTap(String messageId, String? feedback) async {
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+    try {
+      await widget.onFeedback!(messageId, feedback);
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return message.role == 'user' ? _buildUserBubble(context) : _buildAssistantBubble(context);
+    return widget.message.role == 'user' ? _buildUserBubble(context) : _buildAssistantBubble(context);
   }
 
   Widget _buildUserBubble(BuildContext context) {
@@ -33,9 +52,9 @@ class ChatMessageBubble extends StatelessWidget {
           Text('You', style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: AppColors.primary, fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
-          Text(message.content, style: Theme.of(context).textTheme.bodyLarge),
+          Text(widget.message.content, style: Theme.of(context).textTheme.bodyLarge),
           const SizedBox(height: 4),
-          Text(message.formattedTimestamp, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11)),
+          Text(widget.message.formattedTimestamp, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11)),
         ])),
       ]),
     );
@@ -63,7 +82,7 @@ class ChatMessageBubble extends StatelessWidget {
         ]),
         const SizedBox(height: 12), const Divider(height: 1), const SizedBox(height: 12),
         MarkdownBody(
-          data: message.content,
+          data: widget.message.content,
           styleSheet: MarkdownStyleSheet(
             p: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
             strong: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700),
@@ -78,8 +97,8 @@ class ChatMessageBubble extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text(message.formattedTimestamp, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11)),
-        if (onFeedback != null) ...[
+        Text(widget.message.formattedTimestamp, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11)),
+        if (widget.onFeedback != null) ...[
           const SizedBox(height: 8),
           const Divider(height: 1),
           const SizedBox(height: 4),
@@ -92,27 +111,31 @@ class ChatMessageBubble extends StatelessWidget {
               const Spacer(),
               IconButton(
                 icon: Icon(
-                  message.feedback == 'up' ? Icons.thumb_up : Icons.thumb_up_outlined,
+                  widget.message.feedback == 'up' ? Icons.thumb_up : Icons.thumb_up_outlined,
                   size: 18,
-                  color: message.feedback == 'up' ? AppColors.primary : AppColors.textHint,
+                  color: widget.message.feedback == 'up' ? AppColors.primary : AppColors.textHint,
                 ),
-                onPressed: () => onFeedback!(
-                  message.id,
-                  message.feedback == 'up' ? null : 'up',
-                ),
+                onPressed: _isSaving
+                    ? null
+                    : () => _onFeedbackTap(
+                          widget.message.id,
+                          widget.message.feedback == 'up' ? null : 'up',
+                        ),
                 visualDensity: VisualDensity.compact,
                 tooltip: 'Helpful',
               ),
               IconButton(
                 icon: Icon(
-                  message.feedback == 'down' ? Icons.thumb_down : Icons.thumb_down_outlined,
+                  widget.message.feedback == 'down' ? Icons.thumb_down : Icons.thumb_down_outlined,
                   size: 18,
-                  color: message.feedback == 'down' ? AppColors.error : AppColors.textHint,
+                  color: widget.message.feedback == 'down' ? AppColors.error : AppColors.textHint,
                 ),
-                onPressed: () => onFeedback!(
-                  message.id,
-                  message.feedback == 'down' ? null : 'down',
-                ),
+                onPressed: _isSaving
+                    ? null
+                    : () => _onFeedbackTap(
+                          widget.message.id,
+                          widget.message.feedback == 'down' ? null : 'down',
+                        ),
                 visualDensity: VisualDensity.compact,
                 tooltip: 'Not helpful',
               ),

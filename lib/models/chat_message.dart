@@ -24,7 +24,7 @@ class ChatMessage {
       'role': role,
       'content': content,
       'timestamp': timestamp.toIso8601String(),
-      'feedback': feedback,
+      if (feedback != null) 'feedback': feedback,
     };
   }
 

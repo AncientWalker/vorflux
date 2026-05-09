@@ -135,7 +135,7 @@ class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
     required String? feedback,
   }) async {
     // Save previous state for rollback
-    final previousMessages = _activeThread?.messages != null
+    final previousMessages = _activeThread != null && _activeThread!.id == threadId
         ? List<ChatMessage>.from(_activeThread!.messages)
         : null;
 
@@ -166,8 +166,10 @@ class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
         );
       }
     } catch (e) {
-      // Rollback on failure
-      if (_activeThread != null && previousMessages != null) {
+      // Rollback on failure — only if still viewing the same thread
+      if (_activeThread != null &&
+          _activeThread!.id == threadId &&
+          previousMessages != null) {
         _activeThread = _activeThread!.copyWith(messages: previousMessages);
         notifyListeners();
       }

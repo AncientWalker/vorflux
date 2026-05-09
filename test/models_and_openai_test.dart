@@ -175,7 +175,7 @@ void main() {
       expect(map['feedback'], 'down');
     });
 
-    test('toMap includes null feedback', () {
+    test('toMap omits feedback when null', () {
       final message = ChatMessage(
         id: 'msg-1',
         threadId: 'thread-1',
@@ -184,8 +184,7 @@ void main() {
         timestamp: DateTime(2025, 6, 15),
       );
       final map = message.toMap();
-      expect(map.containsKey('feedback'), true);
-      expect(map['feedback'], isNull);
+      expect(map.containsKey('feedback'), false);
     });
 
     test('copyWith sets feedback to up', () {

@@ -8,59 +8,31 @@ import 'package:vorflux/theme/app_theme.dart';
 import 'package:vorflux/widgets/chat_message_bubble.dart';
 import 'package:vorflux/widgets/user_avatar.dart';
 
-class DetailScreen extends StatefulWidget {
+class DetailScreen extends StatelessWidget {
   final ConversationThread thread;
   final bool isFeedItem;
 
   const DetailScreen({super.key, required this.thread, this.isFeedItem = false});
 
-  @override
-  State<DetailScreen> createState() => _DetailScreenState();
-}
-
-class _DetailScreenState extends State<DetailScreen> {
-  late List<ChatMessage> _messages;
-
-  @override
-  void initState() {
-    super.initState();
-    _messages = List<ChatMessage>.from(widget.thread.messages);
-  }
-
-  void _handleFeedback(String messageId, String? feedback) {
-    final previousMessages = List<ChatMessage>.from(_messages);
-
-    // Optimistic local update
-    setState(() {
-      _messages = _messages.map((msg) {
-        if (msg.id == messageId) {
-          return msg.copyWith(feedback: () => feedback);
-        }
-        return msg;
-      }).toList();
-    });
-
-    // Persist via provider
-    context.read<HistoryProvider>().updateMessageFeedback(
-      messageId: messageId,
-      threadId: widget.thread.id,
-      feedback: feedback,
-    ).catchError((e) {
-      if (mounted) {
-        setState(() { _messages = previousMessages; });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Failed to save feedback'),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-        );
+  /// Returns the live messages list. For own-thread views the provider's
+  /// `activeThread` is the source of truth so optimistic feedback updates
+  /// are reflected immediately. For feed-item views (other users' threads)
+  /// we fall back to the snapshot passed in at construction time.
+  List<ChatMessage> _resolveMessages(HistoryProvider provider) {
+    if (!isFeedItem) {
+      final active = provider.activeThread;
+      if (active != null && active.id == thread.id) {
+        return active.messages;
       }
-    });
+    }
+    return thread.messages;
   }
 
   @override
   Widget build(BuildContext context) {
+    final provider = context.watch<HistoryProvider>();
+    final messages = _resolveMessages(provider);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Conversation'),
@@ -69,7 +41,7 @@ class _DetailScreenState extends State<DetailScreen> {
             icon: const Icon(Icons.copy), tooltip: 'Copy conversation',
             onPressed: () {
               final buffer = StringBuffer();
-              for (final msg in _messages) {
+              for (final msg in messages) {
                 buffer.writeln(msg.role == 'user' ? 'Q: ${msg.content}' : 'A: ${msg.content}');
                 buffer.writeln();
               }
@@ -85,13 +57,13 @@ class _DetailScreenState extends State<DetailScreen> {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          if (widget.isFeedItem && widget.thread.userName?.isNotEmpty == true) ...[
+          if (isFeedItem && thread.userName?.isNotEmpty == true) ...[
             Row(children: [
-              UserAvatar(photoURL: widget.thread.userPhotoURL, userName: widget.thread.userName, radius: 16),
+              UserAvatar(photoURL: thread.userPhotoURL, userName: thread.userName, radius: 16),
               const SizedBox(width: 8),
-              Text('Asked by ${widget.thread.userName}', style: Theme.of(context).textTheme.bodyMedium),
+              Text('Asked by ${thread.userName}', style: Theme.of(context).textTheme.bodyMedium),
               const Spacer(),
-              Text(widget.thread.formattedTimestamp, style: Theme.of(context).textTheme.bodySmall),
+              Text(thread.formattedTimestamp, style: Theme.of(context).textTheme.bodySmall),
             ]),
             const SizedBox(height: 16),
           ],
@@ -104,13 +76,13 @@ class _DetailScreenState extends State<DetailScreen> {
                 colors: [AppColors.primary, AppColors.primaryLight]),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Text(widget.thread.title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+            child: Text(thread.title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
           ),
           // All messages with feedback controls for own threads
-          ..._messages.map((msg) => ChatMessageBubble(
+          ...messages.map((msg) => ChatMessageBubble(
             message: msg,
-            onFeedback: (!widget.isFeedItem && msg.role == 'assistant')
-                ? _handleFeedback
+            onFeedback: (!isFeedItem && msg.role == 'assistant')
+                ? (messageId, feedback) => _handleFeedback(context, messageId, feedback)
                 : null,
           )),
           // Disclaimer
@@ -129,5 +101,25 @@ class _DetailScreenState extends State<DetailScreen> {
         ]),
       ),
     );
+  }
+
+  Future<void> _handleFeedback(BuildContext context, String messageId, String? feedback) async {
+    try {
+      await context.read<HistoryProvider>().updateMessageFeedback(
+        messageId: messageId,
+        threadId: thread.id,
+        feedback: feedback,
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Failed to save feedback'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    }
   }
 }

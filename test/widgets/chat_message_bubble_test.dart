@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vorflux/models/chat_message.dart';
@@ -27,7 +29,7 @@ void main() {
       await tester.pumpWidget(buildTestWidget(
         ChatMessageBubble(
           message: message,
-          onFeedback: (_, __) {},
+          onFeedback: (_, __) async {},
         ),
       ));
 
@@ -66,7 +68,7 @@ void main() {
       await tester.pumpWidget(buildTestWidget(
         ChatMessageBubble(
           message: message,
-          onFeedback: (_, __) {},
+          onFeedback: (_, __) async {},
         ),
       ));
 
@@ -88,7 +90,7 @@ void main() {
       await tester.pumpWidget(buildTestWidget(
         ChatMessageBubble(
           message: message,
-          onFeedback: (id, feedback) {
+          onFeedback: (id, feedback) async {
             receivedId = id;
             receivedFeedback = feedback;
           },
@@ -117,7 +119,7 @@ void main() {
       await tester.pumpWidget(buildTestWidget(
         ChatMessageBubble(
           message: message,
-          onFeedback: (id, feedback) {
+          onFeedback: (id, feedback) async {
             receivedFeedback = feedback;
           },
         ),
@@ -144,7 +146,7 @@ void main() {
       await tester.pumpWidget(buildTestWidget(
         ChatMessageBubble(
           message: message,
-          onFeedback: (id, feedback) {
+          onFeedback: (id, feedback) async {
             receivedFeedback = feedback;
           },
         ),
@@ -169,7 +171,7 @@ void main() {
       await tester.pumpWidget(buildTestWidget(
         ChatMessageBubble(
           message: message,
-          onFeedback: (_, __) {},
+          onFeedback: (_, __) async {},
         ),
       ));
 
@@ -191,13 +193,55 @@ void main() {
       await tester.pumpWidget(buildTestWidget(
         ChatMessageBubble(
           message: message,
-          onFeedback: (_, __) {},
+          onFeedback: (_, __) async {},
         ),
       ));
 
       expect(find.byIcon(Icons.thumb_down), findsOneWidget);
       expect(find.byIcon(Icons.thumb_down_outlined), findsNothing);
       expect(find.byIcon(Icons.thumb_up_outlined), findsOneWidget);
+    });
+
+    testWidgets('buttons are disabled while feedback is saving', (tester) async {
+      final completer = Completer<void>();
+      var callCount = 0;
+
+      final message = ChatMessage(
+        id: 'msg-1',
+        threadId: 'thread-1',
+        role: 'assistant',
+        content: 'Test answer',
+        timestamp: DateTime(2025, 1, 1),
+      );
+
+      await tester.pumpWidget(buildTestWidget(
+        ChatMessageBubble(
+          message: message,
+          onFeedback: (id, feedback) {
+            callCount++;
+            return completer.future;
+          },
+        ),
+      ));
+
+      // First tap should go through
+      await tester.tap(find.byIcon(Icons.thumb_up_outlined));
+      await tester.pump();
+      expect(callCount, 1);
+
+      // Second tap while still saving should be ignored
+      await tester.tap(find.byIcon(Icons.thumb_up_outlined));
+      await tester.pump();
+      expect(callCount, 1);
+
+      // Complete the save and verify buttons re-enable
+      completer.complete();
+      await tester.pump();
+
+      // Now tapping should work again
+      await tester.tap(find.byIcon(Icons.thumb_up_outlined));
+      await tester.pump();
+      expect(callCount, 2);
     });
   });
 }

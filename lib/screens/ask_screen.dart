@@ -102,12 +102,26 @@ class _AskScreenState extends State<AskScreen> {
           return ChatMessageBubble(
             message: thread.messages[index],
             onFeedback: thread.messages[index].role == 'assistant'
-                ? (messageId, feedback) {
-                    context.read<HistoryProvider>().updateMessageFeedback(
-                      messageId: messageId,
-                      threadId: thread.id,
-                      feedback: feedback,
-                    );
+                ? (messageId, feedback) async {
+                    try {
+                      await context.read<HistoryProvider>().updateMessageFeedback(
+                        messageId: messageId,
+                        threadId: thread.id,
+                        feedback: feedback,
+                      );
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Text('Failed to save feedback'),
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        );
+                      }
+                    }
                   }
                 : null,
           );
