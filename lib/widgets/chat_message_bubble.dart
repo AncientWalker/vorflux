@@ -37,6 +37,7 @@ class _ChatMessageBubbleState extends State<ChatMessageBubble>
     if (widget.isStreaming && _cursorController == null) {
       _startCursorAnimation();
     } else if (!widget.isStreaming && _cursorController != null) {
+      _cursorController!.stop();
       _cursorController!.dispose();
       _cursorController = null;
     }

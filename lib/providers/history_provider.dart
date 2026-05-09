@@ -183,6 +183,9 @@ class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
     _isSending = true;
     notifyListeners();
 
+    Timer? throttleTimer;
+    var streamCancelled = false;
+
     try {
       final now = DateTime.now();
       final threadId = await _ensureThread(question, now);
@@ -207,10 +210,17 @@ class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
 
       // Stream the answer token by token, throttling UI updates to ~50ms
       final answerBuffer = StringBuffer();
-      Timer? throttleTimer;
       var hasPendingUpdate = false;
 
       void flushUpdate() {
+        // Guard: skip if stream was cancelled or thread changed mid-stream
+        if (streamCancelled) return;
+        if (_activeThread == null || _activeThread!.id != threadId) return;
+
+        final messages = List<ChatMessage>.from(_activeThread!.messages);
+        final idx = messages.indexWhere((m) => m.id == streamingMessageId);
+        if (idx < 0) return;
+
         final updatedMessage = ChatMessage(
           id: streamingMessageId,
           threadId: threadId,
@@ -218,8 +228,7 @@ class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
           content: answerBuffer.toString(),
           timestamp: streamingMessage.timestamp,
         );
-        final messages = List<ChatMessage>.from(_activeThread!.messages);
-        messages[messages.length - 1] = updatedMessage;
+        messages[idx] = updatedMessage;
         _activeThread = _activeThread!.copyWith(messages: messages);
         notifyListeners();
         hasPendingUpdate = false;
@@ -248,6 +257,10 @@ class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
       _isStreaming = false;
       final answer = answerBuffer.toString();
 
+      if (answer.isEmpty) {
+        throw Exception('Received empty response from AI service.');
+      }
+
       final answerTime = DateTime.now();
       final persistedMessages = await _persistMessages(
         threadId: threadId,
@@ -269,6 +282,8 @@ class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
       _isSending = false;
       notifyListeners();
     } catch (e) {
+      throttleTimer?.cancel();
+      streamCancelled = true;
       _isStreaming = false;
       await _rollbackOnFailure();
       _isSending = false;

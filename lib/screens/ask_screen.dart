@@ -19,6 +19,7 @@ class _AskScreenState extends State<AskScreen> {
   final ScrollController _scrollController = ScrollController();
   String? _errorMessage;
   String? _lastFailedQuestion;
+  bool _scrollScheduled = false;
 
   @override
   void dispose() {
@@ -76,8 +77,10 @@ class _AskScreenState extends State<AskScreen> {
     final isInputDisabled = isSending || isLoading;
 
     // Auto-scroll during streaming so user follows along
-    if (isStreaming) {
+    if (isStreaming && !_scrollScheduled) {
+      _scrollScheduled = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollScheduled = false;
         _scrollToEnd();
       });
     }
@@ -106,8 +109,7 @@ class _AskScreenState extends State<AskScreen> {
 
   Widget _buildMessageList(ConversationThread thread, bool isSending, bool isStreaming) {
     // Show shimmer only when sending but not yet streaming (i.e., waiting for first token)
-    final showLoadingIndicator = isSending && !isStreaming &&
-        (thread.messages.isEmpty || !thread.messages.last.id.startsWith('streaming-'));
+    final showLoadingIndicator = isSending && !isStreaming;
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.all(16),
