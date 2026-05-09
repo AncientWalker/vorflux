@@ -31,6 +31,7 @@ Future<void> _createTablesAndIndex(DatabaseExecutor db) async {
       role TEXT NOT NULL,
       content TEXT NOT NULL,
       timestamp TEXT NOT NULL,
+      feedback TEXT,
       FOREIGN KEY (threadId) REFERENCES threads(id) ON DELETE CASCADE
     )
   ''');
@@ -133,6 +134,48 @@ Future<Database> _createV1Database() async {
             askedBy TEXT
           )
         ''');
+      },
+    ),
+  );
+  return db;
+}
+
+/// Helper to create a v2 database (schema without feedback column) for v2→v3 migration testing
+Future<Database> _createV2DatabaseOldSchema() async {
+  sqfliteFfiInit();
+  final db = await databaseFactoryFfi.openDatabase(
+    inMemoryDatabasePath,
+    options: OpenDatabaseOptions(
+      version: 1,
+      onConfigure: (db) async {
+        await db.execute('PRAGMA foreign_keys = ON');
+      },
+      onCreate: (db, version) async {
+        await db.execute('''
+          CREATE TABLE threads (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            createdAt TEXT NOT NULL,
+            updatedAt TEXT NOT NULL,
+            userId TEXT,
+            userName TEXT,
+            userPhotoURL TEXT,
+            messageCount INTEGER NOT NULL DEFAULT 0,
+            lastMessagePreview TEXT NOT NULL DEFAULT ''
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE messages (
+            id TEXT PRIMARY KEY,
+            threadId TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            FOREIGN KEY (threadId) REFERENCES threads(id) ON DELETE CASCADE
+          )
+        ''');
+        await db.execute(
+            'CREATE INDEX idx_messages_threadId ON messages(threadId)');
       },
     ),
   );
@@ -651,6 +694,136 @@ void main() {
       const questionText = 'Short question';
       final title = truncateTitle(questionText);
       expect(title, 'Short question');
+    });
+  });
+
+  group('Message feedback', () {
+    late Database db;
+
+    setUp(() async {
+      db = await _createV2Database();
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    test('updateMessageFeedback sets feedback on assistant message', () async {
+      final now = DateTime(2025, 6, 15);
+      await db.insert('threads', ConversationThread(
+        id: 'thread-1', title: 'Test', createdAt: now, updatedAt: now,
+      ).toMap());
+      await db.insert('messages', {
+        'id': 'msg-1', 'threadId': 'thread-1', 'role': 'assistant',
+        'content': 'Answer', 'timestamp': now.toIso8601String(), 'feedback': null,
+      });
+
+      await db.update('messages', {'feedback': 'up'},
+          where: 'id = ? AND role = ?', whereArgs: ['msg-1', 'assistant']);
+
+      final rows = await db.query('messages', where: 'id = ?', whereArgs: ['msg-1']);
+      expect(rows.first['feedback'], 'up');
+    });
+
+    test('updateMessageFeedback clears feedback with null', () async {
+      final now = DateTime(2025, 6, 15);
+      await db.insert('threads', ConversationThread(
+        id: 'thread-1', title: 'Test', createdAt: now, updatedAt: now,
+      ).toMap());
+      await db.insert('messages', {
+        'id': 'msg-1', 'threadId': 'thread-1', 'role': 'assistant',
+        'content': 'Answer', 'timestamp': now.toIso8601String(), 'feedback': 'up',
+      });
+
+      await db.update('messages', {'feedback': null},
+          where: 'id = ? AND role = ?', whereArgs: ['msg-1', 'assistant']);
+
+      final rows = await db.query('messages', where: 'id = ?', whereArgs: ['msg-1']);
+      expect(rows.first['feedback'], isNull);
+    });
+
+    test('updateMessageFeedback does not update user-role messages', () async {
+      final now = DateTime(2025, 6, 15);
+      await db.insert('threads', ConversationThread(
+        id: 'thread-1', title: 'Test', createdAt: now, updatedAt: now,
+      ).toMap());
+      await db.insert('messages', {
+        'id': 'msg-user', 'threadId': 'thread-1', 'role': 'user',
+        'content': 'Question', 'timestamp': now.toIso8601String(), 'feedback': null,
+      });
+
+      final count = await db.update('messages', {'feedback': 'up'},
+          where: 'id = ? AND role = ?', whereArgs: ['msg-user', 'assistant']);
+
+      expect(count, 0); // no rows updated
+      final rows = await db.query('messages', where: 'id = ?', whereArgs: ['msg-user']);
+      expect(rows.first['feedback'], isNull);
+    });
+
+    test('feedback column exists in fresh v2 schema', () async {
+      final now = DateTime(2025, 6, 15);
+      await db.insert('threads', ConversationThread(
+        id: 'thread-1', title: 'Test', createdAt: now, updatedAt: now,
+      ).toMap());
+
+      // Insert with feedback - should not throw
+      await db.insert('messages', {
+        'id': 'msg-1', 'threadId': 'thread-1', 'role': 'assistant',
+        'content': 'Answer', 'timestamp': now.toIso8601String(), 'feedback': 'down',
+      });
+
+      final rows = await db.query('messages', where: 'id = ?', whereArgs: ['msg-1']);
+      expect(rows.first['feedback'], 'down');
+    });
+
+    test('ChatMessage.fromMap reads feedback from database row', () {
+      final map = {
+        'id': 'msg-1',
+        'threadId': 'thread-1',
+        'role': 'assistant',
+        'content': 'Answer',
+        'timestamp': '2025-06-15T00:00:00.000',
+        'feedback': 'up',
+      };
+      final message = ChatMessage.fromMap(map);
+      expect(message.feedback, 'up');
+    });
+  });
+
+  group('V2 to V3 migration', () {
+    late Database db;
+
+    setUp(() async {
+      db = await _createV2DatabaseOldSchema();
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    test('ALTER TABLE adds feedback column to existing messages', () async {
+      final now = DateTime(2025, 6, 15);
+      await db.insert('threads', ConversationThread(
+        id: 'thread-1', title: 'Test', createdAt: now, updatedAt: now,
+      ).toMap());
+      await db.insert('messages', {
+        'id': 'msg-1', 'threadId': 'thread-1', 'role': 'assistant',
+        'content': 'Answer', 'timestamp': now.toIso8601String(),
+      });
+
+      // Simulate v2→v3 migration
+      await db.execute('ALTER TABLE messages ADD COLUMN feedback TEXT');
+
+      // Existing message should have null feedback
+      final rows = await db.query('messages', where: 'id = ?', whereArgs: ['msg-1']);
+      expect(rows.first['feedback'], isNull);
+      expect(rows.first['content'], 'Answer'); // data preserved
+
+      // Should be able to set feedback now
+      await db.update('messages', {'feedback': 'up'},
+          where: 'id = ?', whereArgs: ['msg-1']);
+      final updated = await db.query('messages', where: 'id = ?', whereArgs: ['msg-1']);
+      expect(updated.first['feedback'], 'up');
     });
   });
 }

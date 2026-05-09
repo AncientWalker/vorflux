@@ -28,7 +28,16 @@ service cloud.firestore {
         allow create: if request.auth != null
                       && get(/databases/$(database)/documents/threads/$(threadId)).data.userId == request.auth.uid;
 
-        // Messages are immutable — no update or delete
+        // Thread owner can set feedback on assistant messages only
+        allow update: if request.auth != null
+                      && get(/databases/$(database)/documents/threads/$(threadId)).data.userId == request.auth.uid
+                      && resource.data.role == 'assistant'
+                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['feedback'])
+                      && (
+                        !('feedback' in request.resource.data)
+                        || request.resource.data.feedback == null
+                        || request.resource.data.feedback in ['up', 'down']
+                      );
       }
     }
 

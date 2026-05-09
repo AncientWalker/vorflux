@@ -28,14 +28,14 @@ class FirestoreService {
     return docRef.id;
   }
 
-  static Future<void> addMessage({
+  static Future<String> addMessage({
     required String threadId,
     required String role,
     required String content,
   }) async {
     final threadRef =
         _firestore.collection(_threadsCollection).doc(threadId);
-    await threadRef.collection(_messagesSubcollection).add({
+    final docRef = await threadRef.collection(_messagesSubcollection).add({
       'role': role,
       'content': content,
       'timestamp': FieldValue.serverTimestamp(),
@@ -46,6 +46,20 @@ class FirestoreService {
       'messageCount': FieldValue.increment(1),
       'lastMessagePreview': preview,
     });
+    return docRef.id;
+  }
+
+  static Future<void> updateMessageFeedback({
+    required String threadId,
+    required String messageId,
+    required String? feedback,
+  }) async {
+    await _firestore
+        .collection(_threadsCollection)
+        .doc(threadId)
+        .collection(_messagesSubcollection)
+        .doc(messageId)
+        .update({'feedback': feedback});
   }
 
   static Stream<List<ConversationThread>> getUserThreads(String userId) {
@@ -181,6 +195,7 @@ class FirestoreService {
       role: data['role'] as String? ?? 'user',
       content: data['content'] as String? ?? '',
       timestamp: timestamp?.toDate() ?? DateTime.now(),
+      feedback: data['feedback'] as String?,
     );
   }
 }
