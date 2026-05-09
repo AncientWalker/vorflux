@@ -52,14 +52,18 @@ class _AskScreenState extends State<AskScreen> {
 
   void _scrollToBottom() {
     Future.delayed(const Duration(milliseconds: 300), () {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 500),
-          curve: Curves.easeOut,
-        );
-      }
+      _scrollToEnd();
     });
+  }
+
+  void _scrollToEnd() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
   }
 
   @override
@@ -67,8 +71,16 @@ class _AskScreenState extends State<AskScreen> {
     final historyProvider = context.watch<HistoryProvider>();
     final activeThread = historyProvider.activeThread;
     final isSending = historyProvider.isSending;
+    final isStreaming = historyProvider.isStreaming;
     final isLoading = historyProvider.isLoading;
     final isInputDisabled = isSending || isLoading;
+
+    // Auto-scroll during streaming so user follows along
+    if (isStreaming) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToEnd();
+      });
+    }
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
@@ -83,7 +95,7 @@ class _AskScreenState extends State<AskScreen> {
                         padding: const EdgeInsets.all(16),
                         child: _buildWelcomeBanner(),
                       )
-                    : _buildMessageList(activeThread, isSending),
+                    : _buildMessageList(activeThread, isSending, isStreaming),
           ),
           if (_errorMessage != null) _buildErrorBanner(),
           _buildInputArea(isInputDisabled),
@@ -92,16 +104,23 @@ class _AskScreenState extends State<AskScreen> {
     );
   }
 
-  Widget _buildMessageList(ConversationThread thread, bool isSending) {
+  Widget _buildMessageList(ConversationThread thread, bool isSending, bool isStreaming) {
+    // Show shimmer only when sending but not yet streaming (i.e., waiting for first token)
+    final showLoadingIndicator = isSending && !isStreaming &&
+        (thread.messages.isEmpty || !thread.messages.last.id.startsWith('streaming-'));
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.all(16),
-      itemCount: thread.messages.length + (isSending ? 1 : 0) + 1,
+      itemCount: thread.messages.length + (showLoadingIndicator ? 1 : 0) + 1,
       itemBuilder: (context, index) {
         if (index < thread.messages.length) {
+          final message = thread.messages[index];
+          final isLastMessage = index == thread.messages.length - 1;
+          final isStreamingMessage = isLastMessage && isStreaming && message.id.startsWith('streaming-');
           return ChatMessageBubble(
-            message: thread.messages[index],
-            onFeedback: thread.messages[index].role == 'assistant'
+            message: message,
+            isStreaming: isStreamingMessage,
+            onFeedback: message.role == 'assistant' && !isStreamingMessage
                 ? (messageId, feedback) async {
                     try {
                       await context.read<HistoryProvider>().updateMessageFeedback(
@@ -126,7 +145,7 @@ class _AskScreenState extends State<AskScreen> {
                 : null,
           );
         }
-        if (isSending && index == thread.messages.length) {
+        if (showLoadingIndicator && index == thread.messages.length) {
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
             child: IslamicLoadingIndicator(),

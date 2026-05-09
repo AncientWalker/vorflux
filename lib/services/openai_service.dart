@@ -163,12 +163,17 @@ Format your response clearly:
 
   static Stream<String> askQuestionStream(
     String question, {
+    List<ChatMessage> conversationHistory = const [],
     http.Client? client,
   }) async* {
     final ownClient = client == null;
     client ??= http.Client();
 
     try {
+      final messages = buildMessagesPayload(
+        question,
+        conversationHistory: conversationHistory,
+      );
       final request = http.Request('POST', Uri.parse(_baseUrl));
       request.headers.addAll({
         'Content-Type': 'application/json',
@@ -176,10 +181,7 @@ Format your response clearly:
       });
       request.body = jsonEncode({
         'model': 'gpt-4o',
-        'messages': [
-          {'role': 'system', 'content': _systemPrompt},
-          {'role': 'user', 'content': question},
-        ],
+        'messages': messages,
         'max_tokens': 1500,
         'temperature': 0.7,
         'stream': true,

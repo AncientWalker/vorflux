@@ -6,14 +6,54 @@ import 'package:vorflux/theme/app_theme.dart';
 class ChatMessageBubble extends StatefulWidget {
   final ChatMessage message;
   final Future<void> Function(String messageId, String? feedback)? onFeedback;
-  const ChatMessageBubble({super.key, required this.message, this.onFeedback});
+  final bool isStreaming;
+  const ChatMessageBubble({
+    super.key,
+    required this.message,
+    this.onFeedback,
+    this.isStreaming = false,
+  });
 
   @override
   State<ChatMessageBubble> createState() => _ChatMessageBubbleState();
 }
 
-class _ChatMessageBubbleState extends State<ChatMessageBubble> {
+class _ChatMessageBubbleState extends State<ChatMessageBubble>
+    with SingleTickerProviderStateMixin {
   bool _isSaving = false;
+  AnimationController? _cursorController;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isStreaming) {
+      _startCursorAnimation();
+    }
+  }
+
+  @override
+  void didUpdateWidget(ChatMessageBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isStreaming && _cursorController == null) {
+      _startCursorAnimation();
+    } else if (!widget.isStreaming && _cursorController != null) {
+      _cursorController!.dispose();
+      _cursorController = null;
+    }
+  }
+
+  void _startCursorAnimation() {
+    _cursorController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _cursorController?.dispose();
+    super.dispose();
+  }
 
   Future<void> _onFeedbackTap(String messageId, String? feedback) async {
     if (_isSaving) return;
@@ -81,23 +121,41 @@ class _ChatMessageBubbleState extends State<ChatMessageBubble> {
             color: AppColors.goldDark, fontWeight: FontWeight.w700)),
         ]),
         const SizedBox(height: 12), const Divider(height: 1), const SizedBox(height: 12),
-        MarkdownBody(
-          data: widget.message.content,
-          styleSheet: MarkdownStyleSheet(
-            p: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
-            strong: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700),
-            h1: Theme.of(context).textTheme.headlineMedium,
-            h2: Theme.of(context).textTheme.headlineSmall,
-            listBullet: Theme.of(context).textTheme.bodyLarge,
-            blockquoteDecoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.05),
-              border: Border(left: BorderSide(color: AppColors.gold, width: 4)),
+        if (widget.message.content.isNotEmpty)
+          MarkdownBody(
+            data: widget.message.content,
+            styleSheet: MarkdownStyleSheet(
+              p: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
+              strong: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700),
+              h1: Theme.of(context).textTheme.headlineMedium,
+              h2: Theme.of(context).textTheme.headlineSmall,
+              listBullet: Theme.of(context).textTheme.bodyLarge,
+              blockquoteDecoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.05),
+                border: Border(left: BorderSide(color: AppColors.gold, width: 4)),
+              ),
+              blockquotePadding: const EdgeInsets.all(12),
             ),
-            blockquotePadding: const EdgeInsets.all(12),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(widget.message.formattedTimestamp, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11)),
+        if (widget.isStreaming && _cursorController != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: FadeTransition(
+              opacity: _cursorController!,
+              child: Container(
+                width: 8,
+                height: 18,
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+          ),
+        if (!widget.isStreaming) ...[
+          const SizedBox(height: 4),
+          Text(widget.message.formattedTimestamp, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11)),
+        ],
         if (widget.onFeedback != null) ...[
           const SizedBox(height: 8),
           const Divider(height: 1),
