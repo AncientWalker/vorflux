@@ -129,6 +129,54 @@ class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
     }
   }
 
+  Future<void> updateMessageFeedback({
+    required String messageId,
+    required String threadId,
+    required String? feedback,
+  }) async {
+    // Save previous state for rollback
+    final previousMessages = _activeThread != null && _activeThread!.id == threadId
+        ? List<ChatMessage>.from(_activeThread!.messages)
+        : null;
+
+    // Optimistic local update
+    if (_activeThread != null && _activeThread!.id == threadId) {
+      final updatedMessages = _activeThread!.messages.map((msg) {
+        if (msg.id == messageId) {
+          return msg.copyWith(feedback: () => feedback);
+        }
+        return msg;
+      }).toList();
+      _activeThread = _activeThread!.copyWith(messages: updatedMessages);
+      notifyListeners();
+    }
+
+    // Persist
+    try {
+      if (!FirebaseConfig.isAvailable) {
+        await DatabaseService.updateMessageFeedback(
+          messageId: messageId,
+          feedback: feedback,
+        );
+      } else {
+        await FirestoreService.updateMessageFeedback(
+          threadId: threadId,
+          messageId: messageId,
+          feedback: feedback,
+        );
+      }
+    } catch (e) {
+      // Rollback on failure — only if still viewing the same thread
+      if (_activeThread != null &&
+          _activeThread!.id == threadId &&
+          previousMessages != null) {
+        _activeThread = _activeThread!.copyWith(messages: previousMessages);
+        notifyListeners();
+      }
+      rethrow;
+    }
+  }
+
   Future<void> sendMessage(String question) async {
     _isSending = true;
     notifyListeners();
@@ -257,7 +305,7 @@ class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
     );
 
     final preview = truncatePreview(answer);
-    final persistedMessages = List<ChatMessage>.from(conversationHistory)
+    var persistedMessages = List<ChatMessage>.from(conversationHistory)
       ..add(userMessage)
       ..add(assistantMessage);
 
@@ -271,16 +319,36 @@ class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
         lastMessagePreview: preview,
       );
     } else {
-      await FirestoreService.addMessage(
+      final userDocId = await FirestoreService.addMessage(
         threadId: threadId,
         role: 'user',
         content: question,
       );
-      await FirestoreService.addMessage(
+      final assistantDocId = await FirestoreService.addMessage(
         threadId: threadId,
         role: 'assistant',
         content: answer,
       );
+
+      // Rebuild messages with real Firestore doc IDs
+      final userMessage = ChatMessage(
+        id: userDocId,
+        threadId: threadId,
+        role: 'user',
+        content: question,
+        timestamp: questionTime,
+      );
+      final assistantMessage = ChatMessage(
+        id: assistantDocId,
+        threadId: threadId,
+        role: 'assistant',
+        content: answer,
+        timestamp: answerTime,
+      );
+
+      persistedMessages = List<ChatMessage>.from(conversationHistory)
+        ..add(userMessage)
+        ..add(assistantMessage);
     }
 
     return persistedMessages;

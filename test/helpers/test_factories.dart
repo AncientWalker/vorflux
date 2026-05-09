@@ -1,3 +1,4 @@
+import 'package:vorflux/models/chat_message.dart';
 import 'package:vorflux/models/conversation_thread.dart';
 
 /// Creates a [ConversationThread] with sensible defaults for tests.
@@ -23,5 +24,24 @@ ConversationThread makeThread({
     userPhotoURL: userPhotoURL,
     messageCount: messageCount,
     lastMessagePreview: lastMessagePreview,
+  );
+}
+
+/// Creates a [ChatMessage] with sensible defaults for tests.
+ChatMessage makeMessage({
+  String id = 'msg-1',
+  String threadId = 'thread-1',
+  String role = 'assistant',
+  String content = 'Test answer',
+  DateTime? timestamp,
+  String? feedback,
+}) {
+  return ChatMessage(
+    id: id,
+    threadId: threadId,
+    role: role,
+    content: content,
+    timestamp: timestamp ?? DateTime(2025, 1, 1),
+    feedback: feedback,
   );
 }

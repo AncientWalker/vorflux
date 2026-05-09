@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import 'package:vorflux/models/chat_message.dart';
 import 'package:vorflux/models/conversation_thread.dart';
+import 'package:vorflux/providers/history_provider.dart';
 import 'package:vorflux/theme/app_theme.dart';
 import 'package:vorflux/widgets/chat_message_bubble.dart';
 import 'package:vorflux/widgets/user_avatar.dart';
@@ -11,8 +14,25 @@ class DetailScreen extends StatelessWidget {
 
   const DetailScreen({super.key, required this.thread, this.isFeedItem = false});
 
+  /// Returns the live messages list. For own-thread views the provider's
+  /// `activeThread` is the source of truth so optimistic feedback updates
+  /// are reflected immediately. For feed-item views (other users' threads)
+  /// we fall back to the snapshot passed in at construction time.
+  List<ChatMessage> _resolveMessages(HistoryProvider provider) {
+    if (!isFeedItem) {
+      final active = provider.activeThread;
+      if (active != null && active.id == thread.id) {
+        return active.messages;
+      }
+    }
+    return thread.messages;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final provider = context.watch<HistoryProvider>();
+    final messages = _resolveMessages(provider);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Conversation'),
@@ -21,7 +41,7 @@ class DetailScreen extends StatelessWidget {
             icon: const Icon(Icons.copy), tooltip: 'Copy conversation',
             onPressed: () {
               final buffer = StringBuffer();
-              for (final msg in thread.messages) {
+              for (final msg in messages) {
                 buffer.writeln(msg.role == 'user' ? 'Q: ${msg.content}' : 'A: ${msg.content}');
                 buffer.writeln();
               }
@@ -58,8 +78,13 @@ class DetailScreen extends StatelessWidget {
             ),
             child: Text(thread.title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
           ),
-          // All messages
-          ...thread.messages.map((msg) => ChatMessageBubble(message: msg)),
+          // All messages with feedback controls for own threads
+          ...messages.map((msg) => ChatMessageBubble(
+            message: msg,
+            onFeedback: (!isFeedItem && msg.role == 'assistant')
+                ? (messageId, feedback) => _handleFeedback(context, messageId, feedback)
+                : null,
+          )),
           // Disclaimer
           const SizedBox(height: 16),
           Container(
@@ -76,5 +101,25 @@ class DetailScreen extends StatelessWidget {
         ]),
       ),
     );
+  }
+
+  Future<void> _handleFeedback(BuildContext context, String messageId, String? feedback) async {
+    try {
+      await context.read<HistoryProvider>().updateMessageFeedback(
+        messageId: messageId,
+        threadId: thread.id,
+        feedback: feedback,
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Failed to save feedback'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    }
   }
 }

@@ -125,6 +125,120 @@ void main() {
 
       expect(message.formattedTimestamp, '05/01/2025');
     });
+
+    test('feedback field defaults to null', () {
+      final message = ChatMessage(
+        id: 'msg-1',
+        threadId: 'thread-1',
+        role: 'assistant',
+        content: 'test',
+        timestamp: DateTime(2025, 6, 15),
+      );
+      expect(message.feedback, isNull);
+    });
+
+    test('fromMap with feedback up', () {
+      final map = {
+        'id': 'msg-1',
+        'threadId': 'thread-1',
+        'role': 'assistant',
+        'content': 'test',
+        'timestamp': '2025-06-15T00:00:00.000',
+        'feedback': 'up',
+      };
+      final message = ChatMessage.fromMap(map);
+      expect(message.feedback, 'up');
+    });
+
+    test('fromMap with no feedback key defaults to null', () {
+      final map = {
+        'id': 'msg-1',
+        'threadId': 'thread-1',
+        'role': 'assistant',
+        'content': 'test',
+        'timestamp': '2025-06-15T00:00:00.000',
+      };
+      final message = ChatMessage.fromMap(map);
+      expect(message.feedback, isNull);
+    });
+
+    test('toMap includes feedback field', () {
+      final message = ChatMessage(
+        id: 'msg-1',
+        threadId: 'thread-1',
+        role: 'assistant',
+        content: 'test',
+        timestamp: DateTime(2025, 6, 15),
+        feedback: 'down',
+      );
+      final map = message.toMap();
+      expect(map['feedback'], 'down');
+    });
+
+    test('toMap omits feedback when null', () {
+      final message = ChatMessage(
+        id: 'msg-1',
+        threadId: 'thread-1',
+        role: 'assistant',
+        content: 'test',
+        timestamp: DateTime(2025, 6, 15),
+      );
+      final map = message.toMap();
+      expect(map.containsKey('feedback'), false);
+    });
+
+    test('copyWith sets feedback to up', () {
+      final message = ChatMessage(
+        id: 'msg-1',
+        threadId: 'thread-1',
+        role: 'assistant',
+        content: 'test',
+        timestamp: DateTime(2025, 6, 15),
+      );
+      final updated = message.copyWith(feedback: () => 'up');
+      expect(updated.feedback, 'up');
+      expect(updated.id, 'msg-1'); // other fields preserved
+    });
+
+    test('copyWith clears feedback to null', () {
+      final message = ChatMessage(
+        id: 'msg-1',
+        threadId: 'thread-1',
+        role: 'assistant',
+        content: 'test',
+        timestamp: DateTime(2025, 6, 15),
+        feedback: 'up',
+      );
+      final updated = message.copyWith(feedback: () => null);
+      expect(updated.feedback, isNull);
+    });
+
+    test('copyWith with no feedback arg preserves existing', () {
+      final message = ChatMessage(
+        id: 'msg-1',
+        threadId: 'thread-1',
+        role: 'assistant',
+        content: 'test',
+        timestamp: DateTime(2025, 6, 15),
+        feedback: 'down',
+      );
+      final updated = message.copyWith(content: 'new content');
+      expect(updated.feedback, 'down');
+      expect(updated.content, 'new content');
+    });
+
+    test('toMap/fromMap round-trip preserves feedback', () {
+      final message = ChatMessage(
+        id: 'msg-1',
+        threadId: 'thread-1',
+        role: 'assistant',
+        content: 'test',
+        timestamp: DateTime(2025, 6, 15),
+        feedback: 'up',
+      );
+      final restored = ChatMessage.fromMap(message.toMap());
+      expect(restored.feedback, 'up');
+    });
   });
 
   group('ConversationThread', () {

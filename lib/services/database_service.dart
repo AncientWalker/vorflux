@@ -20,7 +20,7 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -29,7 +29,12 @@ class DatabaseService {
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
+          // v1→v2 (or v1→v3): creates tables with latest schema including feedback column
           await _migrateV1ToV2(db);
+          // Skip v3 ALTER since _createTablesAndIndex already includes feedback column
+        } else if (oldVersion < 3) {
+          // v2→v3: add feedback column to existing messages table
+          await db.execute('ALTER TABLE messages ADD COLUMN feedback TEXT');
         }
       },
     );
@@ -61,6 +66,7 @@ class DatabaseService {
         role TEXT NOT NULL,
         content TEXT NOT NULL,
         timestamp TEXT NOT NULL,
+        feedback TEXT,
         FOREIGN KEY (threadId) REFERENCES threads(id) ON DELETE CASCADE
       )
     ''');
@@ -197,6 +203,19 @@ class DatabaseService {
       'messages',
       message.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  static Future<void> updateMessageFeedback({
+    required String messageId,
+    required String? feedback,
+  }) async {
+    final db = await database;
+    await db.update(
+      'messages',
+      {'feedback': feedback},
+      where: 'id = ? AND role = ?',
+      whereArgs: [messageId, 'assistant'],
     );
   }
 
