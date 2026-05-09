@@ -1,13 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vorflux/providers/feed_provider.dart';
 
 import '../helpers/test_factories.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('FeedProvider unread count', () {
     late FeedProvider provider;
 
     setUp(() {
+      SharedPreferences.setMockInitialValues({});
       provider = FeedProvider();
     });
 
@@ -195,6 +199,52 @@ void main() {
       );
       expect(provider.unreadCount, 15);
       // UI would display "9+" but the raw count is 15
+    });
+
+    test('stopListening clears lastSeenTimestamp and currentUserId', () {
+      provider.setLastSeenForTesting(DateTime(2025, 6, 1));
+      provider.setCurrentUserIdForTesting('user-me');
+      provider.entriesForTesting = [
+        makeThread(
+            id: '1',
+            updatedAt: DateTime(2025, 6, 1, 13, 0),
+            userId: 'user-other'),
+      ];
+      expect(provider.unreadCount, 1);
+
+      provider.stopListening();
+
+      // After stopListening, threads are cleared so unreadCount is 0
+      expect(provider.unreadCount, 0);
+
+      // Simulate a new user signing in with new threads — lastSeen should
+      // be null (cleared), so all threads from others count as unread.
+      provider.setCurrentUserIdForTesting('user-new');
+      provider.entriesForTesting = [
+        makeThread(
+            id: '2',
+            updatedAt: DateTime(2025, 1, 1),
+            userId: 'user-someone'),
+      ];
+      expect(provider.unreadCount, 1);
+    });
+
+    test('markFeedAsSeen uses latest thread time when ahead of device clock',
+        () async {
+      // Simulate a thread whose updatedAt is far in the future (server clock
+      // ahead of device). markFeedAsSeen should use that timestamp so the
+      // badge clears for all visible items.
+      final futureTime = DateTime.now().add(const Duration(hours: 1));
+      provider.setCurrentUserIdForTesting('user-me');
+      provider.entriesForTesting = [
+        makeThread(id: '1', updatedAt: futureTime, userId: 'user-other'),
+      ];
+      expect(provider.unreadCount, 1);
+
+      await provider.markFeedAsSeen();
+
+      // The future-timestamped thread should now be considered "read"
+      expect(provider.unreadCount, 0);
     });
   });
 }

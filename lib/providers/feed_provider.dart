@@ -31,7 +31,7 @@ class FeedProvider extends ChangeNotifier with SearchableEntriesMixin {
   bool get isEmpty => _threads.isEmpty;
 
   /// Number of feed threads from other users that were updated after the
-  /// user last viewed the feed tab. Capped at display level in the UI (9+).
+  /// user last viewed the feed tab. The UI displays this as "9+" when above 9.
   ///
   /// When the user has never visited the feed (no stored timestamp), all
   /// threads from other users are considered unread.
@@ -110,18 +110,30 @@ class FeedProvider extends ChangeNotifier with SearchableEntriesMixin {
     try {
       final prefs = await SharedPreferences.getInstance();
       final millis = prefs.getInt(lastSeenKey(_currentUserId!));
-      if (millis != null) {
-        _lastSeenTimestamp = DateTime.fromMillisecondsSinceEpoch(millis);
-      }
+      _lastSeenTimestamp = millis != null
+          ? DateTime.fromMillisecondsSinceEpoch(millis)
+          : null;
     } catch (e) {
       debugPrint('Error loading feed last-seen timestamp: $e');
     }
   }
 
-  /// Marks the feed as seen by saving the current time. Call this when the
-  /// user navigates to the Feed tab.
+  /// Marks the feed as seen by saving the current time (or the latest thread
+  /// timestamp if it exceeds the current time, to handle server clock skew).
+  /// Call this when the user navigates to the Feed tab.
   Future<void> markFeedAsSeen() async {
-    _lastSeenTimestamp = DateTime.now();
+    final latestThreadTime = _threads
+        .map((t) => t.updatedAt)
+        .fold<DateTime?>(null, (latest, current) {
+      if (latest == null || current.isAfter(latest)) return current;
+      return latest;
+    });
+
+    final now = DateTime.now();
+    _lastSeenTimestamp =
+        latestThreadTime != null && latestThreadTime.isAfter(now)
+            ? latestThreadTime
+            : now;
     notifyListeners();
 
     if (_currentUserId == null || _currentUserId!.isEmpty) return;
@@ -178,6 +190,8 @@ class FeedProvider extends ChangeNotifier with SearchableEntriesMixin {
     _subscription?.cancel();
     _subscription = null;
     _threads = [];
+    _lastSeenTimestamp = null;
+    _currentUserId = null;
     clearSearch();
     notifyListeners();
   }
