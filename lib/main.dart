@@ -42,7 +42,7 @@ class VorfluxApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => FeedProvider()),
       ],
       child: MaterialApp(
-        title: 'Vorflux',
+        title: 'Ask Quran',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
         home: const AuthGate(),

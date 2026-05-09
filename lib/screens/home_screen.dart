@@ -48,7 +48,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Icon(Icons.auto_awesome, color: AppColors.goldLight, size: 24),
             const SizedBox(width: 8),
-            const Text('Vorflux'),
+            const Text('Ask Quran'),
           ],
         ),
         actions: [
@@ -175,14 +175,14 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Icon(Icons.auto_awesome, color: AppColors.gold),
             const SizedBox(width: 8),
-            Text('About Vorflux', style: Theme.of(context).textTheme.headlineSmall),
+            Text('About Ask Quran', style: Theme.of(context).textTheme.headlineSmall),
           ],
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Vorflux is an Islamic Q&A app that provides answers exclusively from the Holy Quran and authentic Hadith collections.',
+            Text('Ask Quran is an Islamic Q&A app that provides answers exclusively from the Holy Quran and authentic Hadith collections.',
                 style: Theme.of(context).textTheme.bodyLarge),
             const SizedBox(height: 16),
             Text('Powered by AI, every answer cites specific Surah:Ayah references for Quran verses and Hadith collection names with numbers.',

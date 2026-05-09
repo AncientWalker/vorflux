@@ -4,6 +4,6 @@ import 'package:vorflux/main.dart';
 void main() {
   testWidgets('App should build', (WidgetTester tester) async {
     await tester.pumpWidget(const VorfluxApp());
-    expect(find.text('Vorflux'), findsOneWidget);
+    expect(find.text('Ask Quran'), findsOneWidget);
   });
 }

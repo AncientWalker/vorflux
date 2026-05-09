@@ -56,7 +56,7 @@ class LoginScreen extends StatelessWidget {
         ),
         const SizedBox(height: 24),
         Text(
-          'Vorflux',
+          'Ask Quran',
           style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                 color: Colors.white,
                 fontSize: 40,
