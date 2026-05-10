@@ -89,11 +89,11 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.ask.quran" "\0"
+            VALUE "CompanyName", "com.quran.ask" "\0"
             VALUE "FileDescription", "vorflux" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "vorflux" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.ask.quran. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 com.quran.ask. All rights reserved." "\0"
             VALUE "OriginalFilename", "vorflux.exe" "\0"
             VALUE "ProductName", "vorflux" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
