@@ -18,7 +18,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE $_tableName (
@@ -26,9 +26,17 @@ class DatabaseService {
             question TEXT NOT NULL,
             answer TEXT NOT NULL,
             timestamp TEXT NOT NULL,
-            askedBy TEXT
+            askedBy TEXT,
+            userPhotoURL TEXT,
+            userId TEXT
           )
         ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('ALTER TABLE $_tableName ADD COLUMN userPhotoURL TEXT');
+          await db.execute('ALTER TABLE $_tableName ADD COLUMN userId TEXT');
+        }
       },
     );
   }
