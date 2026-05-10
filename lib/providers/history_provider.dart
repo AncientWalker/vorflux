@@ -16,6 +16,7 @@ class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
   ConversationThread? _activeThread;
   bool _isLoading = false;
   bool _isSending = false;
+  bool _isStreaming = false;
   StreamSubscription? _subscription;
   String? _currentUserId;
   String _currentUserName = '';
@@ -29,6 +30,7 @@ class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
 
   bool get isLoading => _isLoading;
   bool get isSending => _isSending;
+  bool get isStreaming => _isStreaming;
   bool get isEmpty => _threads.isEmpty;
 
   @override
@@ -181,6 +183,9 @@ class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
     _isSending = true;
     notifyListeners();
 
+    Timer? throttleTimer;
+    var streamCancelled = false;
+
     try {
       final now = DateTime.now();
       final threadId = await _ensureThread(question, now);
@@ -188,10 +193,73 @@ class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
 
       _showOptimisticUserMessage(threadId, question, now);
 
-      final answer = await OpenAIService.askQuestion(
+      // Create a placeholder assistant message for streaming
+      final streamingMessageId = 'streaming-${now.millisecondsSinceEpoch}';
+      final streamingMessage = ChatMessage(
+        id: streamingMessageId,
+        threadId: threadId,
+        role: 'assistant',
+        content: '',
+        timestamp: DateTime.now(),
+      );
+      _activeThread = _activeThread!.copyWith(
+        messages: [..._activeThread!.messages, streamingMessage],
+      );
+      _isStreaming = true;
+      notifyListeners();
+
+      // Stream the answer token by token, throttling UI updates to ~50ms
+      final answerBuffer = StringBuffer();
+      var hasPendingUpdate = false;
+
+      void flushUpdate() {
+        // Guard: skip if stream was cancelled or thread changed mid-stream
+        if (streamCancelled) return;
+        if (_activeThread == null || _activeThread!.id != threadId) return;
+
+        final messages = List<ChatMessage>.from(_activeThread!.messages);
+        final idx = messages.indexWhere((m) => m.id == streamingMessageId);
+        if (idx < 0) return;
+
+        final updatedMessage = ChatMessage(
+          id: streamingMessageId,
+          threadId: threadId,
+          role: 'assistant',
+          content: answerBuffer.toString(),
+          timestamp: streamingMessage.timestamp,
+        );
+        messages[idx] = updatedMessage;
+        _activeThread = _activeThread!.copyWith(messages: messages);
+        notifyListeners();
+        hasPendingUpdate = false;
+      }
+
+      await for (final token in OpenAIService.askQuestionStream(
         question,
         conversationHistory: conversationHistory,
-      );
+      )) {
+        answerBuffer.write(token);
+        if (throttleTimer == null || !throttleTimer.isActive) {
+          flushUpdate();
+          throttleTimer = Timer(const Duration(milliseconds: 50), () {
+            if (hasPendingUpdate) {
+              flushUpdate();
+            }
+          });
+        } else {
+          hasPendingUpdate = true;
+        }
+      }
+      throttleTimer?.cancel();
+      // Final flush to ensure all tokens are rendered
+      flushUpdate();
+
+      _isStreaming = false;
+      final answer = answerBuffer.toString();
+
+      if (answer.isEmpty) {
+        throw Exception('Received empty response from AI service.');
+      }
 
       final answerTime = DateTime.now();
       final persistedMessages = await _persistMessages(
@@ -214,6 +282,9 @@ class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
       _isSending = false;
       notifyListeners();
     } catch (e) {
+      throttleTimer?.cancel();
+      streamCancelled = true;
+      _isStreaming = false;
       await _rollbackOnFailure();
       _isSending = false;
       notifyListeners();
@@ -382,10 +453,15 @@ class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
   Future<void> _rollbackOnFailure() async {
     if (_activeThread != null && _activeThread!.messages.isNotEmpty) {
       final messages = List<ChatMessage>.from(_activeThread!.messages);
-      if (messages.last.id.startsWith('temp-user-')) {
+      // Remove streaming assistant message if present
+      if (messages.isNotEmpty && messages.last.id.startsWith('streaming-')) {
         messages.removeLast();
-        _activeThread = _activeThread!.copyWith(messages: messages);
       }
+      // Remove temp user message if present
+      if (messages.isNotEmpty && messages.last.id.startsWith('temp-user-')) {
+        messages.removeLast();
+      }
+      _activeThread = _activeThread!.copyWith(messages: messages);
     }
 
     if (_activeThread != null && _activeThread!.messages.isEmpty) {
