@@ -161,25 +161,14 @@ class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
           feedback: feedback,
         );
       } else {
-        try {
-          await FirestoreService.updateMessageFeedback(
-            threadId: threadId,
-            messageId: messageId,
-            feedback: feedback,
-          );
-        } catch (firestoreError) {
-          debugPrint('[AskQuran] Firestore feedback failed: $firestoreError');
-          debugPrint('[AskQuran] Falling back to local storage for feedback');
-          // Fall back to local SQLite if Firestore write fails
-          // (e.g., Firestore security rules not yet deployed)
-          await DatabaseService.updateMessageFeedback(
-            messageId: messageId,
-            feedback: feedback,
-          );
-        }
+        await FirestoreService.updateMessageFeedback(
+          threadId: threadId,
+          messageId: messageId,
+          feedback: feedback,
+        );
       }
     } catch (e) {
-      debugPrint('[AskQuran] Feedback save failed entirely: $e');
+      debugPrint('[AskQuran] Feedback save failed: $e');
       // Rollback on failure — only if still viewing the same thread
       if (_activeThread != null &&
           _activeThread!.id == threadId &&
