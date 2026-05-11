@@ -168,6 +168,7 @@ class HistoryProvider extends ChangeNotifier with SearchableEntriesMixin {
         );
       }
     } catch (e) {
+      debugPrint('[AskQuran] Feedback save failed: $e');
       // Rollback on failure — only if still viewing the same thread
       if (_activeThread != null &&
           _activeThread!.id == threadId &&
